@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #FF3B30;
+  --color-primary-hover: #E3261C;
+  --color-accent: #FFD60A;
+  --color-surface: #F9F9F9;
+  --color-surface-dim: #e5e7eb;
+  --color-text-main: #111111;
+  --color-text-muted: #6b7280;
+
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  :root {
+    --background: #F9F9F9;
+    --foreground: #111111;
+    --border: #e5e7eb;
+  }
+}
+
+body {
+  @apply bg-[var(--background)] text-[var(--foreground)] font-sans antialiased;
+}
+
+.canvas-bg {
+  background-color: #ffffff;
+  background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
