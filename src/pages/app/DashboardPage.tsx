@@ -54,37 +54,58 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDeleteBoard = async (e: React.MouseEvent, id: string) => {
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [renameBoardId, setRenameBoardId] = useState<string | null>(null);
+  const [newTitleValue, setNewTitleValue] = useState<string>("");
+  const [isDeletingActive, setIsDeletingActive] = useState<boolean>(false);
+  const [isRenamingActive, setIsRenamingActive] = useState<boolean>(false);
+
+  const handleDeleteBoard = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this board?")) {
-      try {
-        await deleteBoard(id);
-        setBoards(boards.filter(b => b.id !== id));
-      } catch (err: any) {
-        console.error("Failed to delete board:", err);
-        alert("Failed to delete board: " + (err.message || JSON.stringify(err)));
-      }
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteBoard = async () => {
+    if (!deleteConfirmId) return;
+    setIsDeletingActive(true);
+    try {
+      await deleteBoard(deleteConfirmId);
+      setBoards(boards.filter(b => b.id !== deleteConfirmId));
+      setDeleteConfirmId(null);
+    } catch (err: any) {
+      console.error("Failed to delete board:", err);
+      alert("Failed to delete board: " + (err.message || JSON.stringify(err)));
+    } finally {
+      setIsDeletingActive(false);
     }
   };
 
-  const handleRenameBoard = async (e: React.MouseEvent, id: string, currentTitle: string) => {
+  const handleRenameBoard = (e: React.MouseEvent, id: string, currentTitle: string) => {
     e.preventDefault();
     e.stopPropagation();
-    const newTitle = prompt("Enter new title for this board:", currentTitle);
-    if (newTitle !== null) {
-      const trimmed = newTitle.trim();
-      if (!trimmed) {
-        alert("Board title cannot be empty!");
-        return;
-      }
-      try {
-        await updateBoard(id, { title: trimmed });
-        setBoards(boards.map(b => b.id === id ? { ...b, title: trimmed } : b));
-      } catch (err) {
-        console.error("Failed to rename board:", err);
-        alert("Failed to rename board");
-      }
+    setRenameBoardId(id);
+    setNewTitleValue(currentTitle);
+  };
+
+  const confirmRenameBoard = async () => {
+    if (!renameBoardId) return;
+    const trimmed = newTitleValue.trim();
+    if (!trimmed) {
+      alert("Board title cannot be empty!");
+      return;
+    }
+    setIsRenamingActive(true);
+    try {
+      await updateBoard(renameBoardId, { title: trimmed });
+      setBoards(boards.map(b => b.id === renameBoardId ? { ...b, title: trimmed } : b));
+      setRenameBoardId(null);
+      setNewTitleValue("");
+    } catch (err: any) {
+      console.error("Failed to rename board:", err);
+      alert("Failed to rename board");
+    } finally {
+      setIsRenamingActive(false);
     }
   };
 
@@ -187,8 +208,8 @@ export default function DashboardPage() {
                       
                       {/* Card Info Footer */}
                       <div className="p-3 bg-white flex flex-col justify-between h-16">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-semibold text-sm truncate text-[#111111]">{board.title}</h4>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-semibold text-sm truncate text-[#111111] flex-1">{board.title}</h4>
                         </div>
                         <div className="flex items-center justify-between mt-1">
                           <p className="text-[11px] text-gray-500 flex items-center gap-1">
@@ -199,8 +220,34 @@ export default function DashboardPage() {
                       </div>
                     </Link>
 
-                    {/* Action buttons sitting absolutely on top, safely outside the Link container */}
-                    <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    {/* Dedicated touch-friendly project action buttons sitting absolutely on top of bottom footer */}
+                    <div className="absolute bottom-3 right-3 flex items-center gap-1.5 z-10 bg-white/90 pl-1 rounded-lg">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRenameBoard(e, board.id, board.title);
+                        }}
+                        className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100"
+                        title="Rename Board"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteBoard(e, board.id);
+                        }}
+                        className="p-1 rounded text-gray-400 hover:text-[#FF3B30] hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100"
+                        title="Delete Board"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+
+                    {/* Action buttons sitting absolutely on top of the card preview on hover */}
+                    <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10">
                        <button onClick={(e) => handleRenameBoard(e, board.id, board.title)} className="w-7 h-7 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer" title="Rename Board"><Pencil size={12} /></button>
                        <button onClick={(e) => handleDeleteBoard(e, board.id)} className="w-7 h-7 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-500 hover:text-[#FF3B30] hover:bg-gray-50 shadow-sm transition-colors cursor-pointer" title="Delete Board"><Trash2 size={12} /></button>
                     </div>
@@ -361,6 +408,101 @@ export default function DashboardPage() {
 
         </div>
       </div>
+
+      {/* Custom Delete Confirmation Dialog */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setDeleteConfirmId(null)}>
+          <div 
+            className="bg-white border border-gray-150 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-[#FF3B30] mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+                <Trash2 size={20} />
+              </div>
+              <h3 className="font-bold text-lg text-gray-900">Delete Board</h3>
+            </div>
+            
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              Are you sure you want to delete this board? This action is permanent and cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmId(null)}
+                className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-xl border border-gray-200 transition-all"
+                disabled={isDeletingActive}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteBoard}
+                className="px-4 py-2 text-sm font-bold text-white bg-[#FF3B30] hover:bg-[#E3261C] rounded-xl shadow-sm transition-all flex items-center justify-center"
+                disabled={isDeletingActive}
+              >
+                {isDeletingActive ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Rename Board Dialog */}
+      {renameBoardId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setRenameBoardId(null)}>
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              confirmRenameBoard();
+            }}
+            className="bg-white border border-gray-150 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-gray-900 mb-4">
+              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                <Pencil size={18} />
+              </div>
+              <h3 className="font-bold text-lg text-gray-900">Rename Board</h3>
+            </div>
+            
+            <div className="mb-6">
+              <label htmlFor="board-title-input" className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                Board Title
+              </label>
+              <input
+                id="board-title-input"
+                type="text"
+                value={newTitleValue}
+                onChange={(e) => setNewTitleValue(e.target.value)}
+                className="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-3.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-gray-300 shadow-sm transition-all animate-none"
+                placeholder="Enter new board name..."
+                autoFocus
+                required
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setRenameBoardId(null)}
+                className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-xl border border-gray-200 transition-all"
+                disabled={isRenamingActive}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm font-bold text-white bg-[#111111] hover:bg-gray-900 rounded-xl shadow-sm transition-all"
+                disabled={isRenamingActive}
+              >
+                {isRenamingActive ? "Saving..." : "Save Title"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@ import {
   MoreHorizontal, Users, Share, Settings, ChevronLeft, Search, ZoomIn, ZoomOut, Sparkles,
   Hand, Hexagon, Octagon, Star, MessageSquare, Frame, Eraser, Link2, Wand2, Paintbrush,
   Undo2, Redo2, Copy, ClipboardPaste, CopyPlus, Group, Ungroup, MoveUp, MoveDown, Lock, Unlock, Download, Share2, AlignCenter, AlignLeft, AlignRight, CornerUpRight, ArrowRightLeft, AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd, AlignHorizontalJustifyCenter, AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
-  Box, Maximize, MousePointerClick, Bot, Network, Map, Library, Trash2
+  Box, Maximize, MousePointerClick, Bot, Network, Map, Library, Trash2, AlertTriangle, X
 } from "lucide-react"
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts"
 import { TemplateLibraryModal } from "../../components/TemplateLibraryModal"
@@ -19,6 +19,7 @@ import { YuktiCanvasLogo } from "../../components/YuktiCanvasLogo"
 import { getBoard, updateBoard, deleteBoard, Board } from "../../lib/boards"
 
 const ShapeRenderer = ({ shape, isSelected, updateShape, activeTool }: { shape: Shape, isSelected: boolean, updateShape: any, activeTool: string }) => {
+  const shapes = useCanvasStore(state => state.shapes);
   const w = Math.max(1, shape.width);
   const h = Math.max(1, shape.height);
   
@@ -31,7 +32,61 @@ const ShapeRenderer = ({ shape, isSelected, updateShape, activeTool }: { shape: 
   const strokeWidth = shape.type === 'text' ? 0 : (shape.strokeWidth || 2);
   const strokeDasharray = shape.stroke === 'dashed' ? '8,8' : 'none';
 
-    const renderContent = () => {
+  // Compute absolute line-like coords on the canvas
+  let x1 = shape.flipX ? shape.x + shape.width : shape.x;
+  let y1 = shape.flipY ? shape.y + shape.height : shape.y;
+  let x2 = shape.flipX ? shape.x : shape.x + shape.width;
+  let y2 = shape.flipY ? shape.y : shape.y + shape.height;
+
+  if (shape.fromId) {
+    const parent = shapes.find(s => s.id === shape.fromId);
+    if (parent) {
+      const pos = shape.fromPosition || 'center';
+      if (pos === 't') {
+        x1 = parent.x + parent.width / 2;
+        y1 = parent.y;
+      } else if (pos === 'r') {
+        x1 = parent.x + parent.width;
+        y1 = parent.y + parent.height / 2;
+      } else if (pos === 'b') {
+        x1 = parent.x + parent.width / 2;
+        y1 = parent.y + parent.height;
+      } else if (pos === 'l') {
+        x1 = parent.x;
+        y1 = parent.y + parent.height / 2;
+      } else if (pos === 'center') {
+        x1 = parent.x + parent.width / 2;
+        y1 = parent.y + parent.height / 2;
+      }
+    }
+  }
+
+  if (shape.toId) {
+    const parent = shapes.find(s => s.id === shape.toId);
+    if (parent) {
+      const pos = shape.toPosition || 'center';
+      if (pos === 't') {
+        x2 = parent.x + parent.width / 2;
+        y2 = parent.y;
+      } else if (pos === 'r') {
+        x2 = parent.x + parent.width;
+        y2 = parent.y + parent.height / 2;
+      } else if (pos === 'b') {
+        x2 = parent.x + parent.width / 2;
+        y2 = parent.y + parent.height;
+      } else if (pos === 'l') {
+        x2 = parent.x;
+        y2 = parent.y + parent.height / 2;
+      } else if (pos === 'center') {
+        x2 = parent.x + parent.width / 2;
+        y2 = parent.y + parent.height / 2;
+      }
+    }
+  }
+
+  // Since lines, arrows, curved arrows, and connectors are drawn inside a group translated to translate(0, 0),
+  // they must be rendered using absolute canvas coordinates (x1, y1, x2, y2) instead of offsets.
+  const renderContent = () => {
     switch (shape.type) {
       case 'rect':
         return <rect width={w} height={h} fill={fillColor} stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} strokeLinejoin="round" strokeLinecap="round" />;
@@ -47,7 +102,7 @@ const ShapeRenderer = ({ shape, isSelected, updateShape, activeTool }: { shape: 
       case 'hexagon':
         return <polygon points={`${w*0.25},0 ${w*0.75},0 ${w},${h/2} ${w*0.75},${h} ${w*0.25},${h} 0,${h/2}`} fill={fillColor} stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} strokeLinejoin="round" strokeLinecap="round" />;
       case 'octagon':
-        return <polygon points={`${w*0.3},0 ${w*0.7},0 ${w},${h*0.3} ${w},${h*0.7} ${w*0.7},${h} ${w*0.3},${h} 0,${h*0.7} 0,${h*0.3}`} fill={fillColor} stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} strokeLinejoin="round" strokeLinecap="round" />;
+        return <polygon points={`${w*0.3},0 ${w*0.7},0 ${w},${h*0.3} ${w},${h*0.3} ${w*0.7},${h} ${w*0.3},${h} 0,${h*0.7} 0,${h*0.3}`} fill={fillColor} stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} strokeLinejoin="round" strokeLinecap="round" />;
       case 'star': {
         const cx = w/2, cy = h/2, outerRadius = Math.min(w,h)/2, innerRadius = outerRadius/2.5;
         let points = "";
@@ -63,10 +118,10 @@ const ShapeRenderer = ({ shape, isSelected, updateShape, activeTool }: { shape: 
       case 'doubleArrow':
         return (
           <line 
-            x1={shape.flipX ? w : 0} 
-            y1={shape.flipY ? h : 0} 
-            x2={shape.flipX ? 0 : w} 
-            y2={shape.flipY ? 0 : h} 
+            x1={x1} 
+            y1={y1} 
+            x2={x2} 
+            y2={y2} 
             stroke={strokeColor} 
             strokeWidth={4} 
             strokeDasharray={strokeDasharray}
@@ -77,10 +132,6 @@ const ShapeRenderer = ({ shape, isSelected, updateShape, activeTool }: { shape: 
           />
         );
       case 'curvedArrow': {
-        const x1 = shape.flipX ? w : 0;
-        const y1 = shape.flipY ? h : 0;
-        const x2 = shape.flipX ? 0 : w;
-        const y2 = shape.flipY ? 0 : h;
         const cx = x1 + (x2 - x1) / 2;
         const cy = y1;
         return (
@@ -97,14 +148,25 @@ const ShapeRenderer = ({ shape, isSelected, updateShape, activeTool }: { shape: 
         );
       }
       case 'connector': {
-        const x1 = shape.flipX ? w : 0;
-        const y1 = shape.flipY ? h : 0;
-        const x2 = shape.flipX ? 0 : w;
-        const y2 = shape.flipY ? 0 : h;
         const midX = (x1 + x2) / 2;
+        let d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+        if (shape.fromPosition && shape.toPosition) {
+          const fromPos = shape.fromPosition;
+          const toPos = shape.toPosition;
+          if ((fromPos === 'r' || fromPos === 'l') && (toPos === 'r' || toPos === 'l')) {
+            d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+          } else if ((fromPos === 't' || fromPos === 'b') && (toPos === 't' || toPos === 'b')) {
+            const midY = (y1 + y2) / 2;
+            d = `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+          } else if ((fromPos === 'r' || fromPos === 'l') && (toPos === 't' || toPos === 'b')) {
+            d = `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
+          } else if ((fromPos === 't' || fromPos === 'b') && (toPos === 'r' || toPos === 'l')) {
+            d = `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
+          }
+        }
         return (
           <path 
-            d={`M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`} 
+            d={d} 
             fill="none" 
             stroke={strokeColor} 
             strokeWidth={4} 
@@ -209,39 +271,220 @@ export default function CanvasPage() {
   const selectedShapeId = selectedShapeIds[0] || null;
 
   const [dbBoard, setDbBoard] = useState<Board | null>(null);
+  const [showCanvasRenameModal, setShowCanvasRenameModal] = useState(false);
+  const [showCanvasDeleteModal, setShowCanvasDeleteModal] = useState(false);
+  const [tempCanvasTitle, setTempCanvasTitle] = useState("");
+  const [isHeaderDeletingActive, setIsHeaderDeletingActive] = useState(false);
+  const [isHeaderRenamingActive, setIsHeaderRenamingActive] = useState(false);
   const isLoadedRef = useRef(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
 
-  const handleDeleteBoardFromHeader = async () => {
+  // AI-Powered Diagram & Layout Generation States
+  const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [aiGeneratingMessage, setAiGeneratingMessage] = useState("");
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<'flowchart' | 'mindmap' | 'architecture' | 'journey' | 'roadmap' | null>(null);
+  const [lastAttemptedPrompt, setLastAttemptedPrompt] = useState("");
+  const [lastAttemptedType, setLastAttemptedType] = useState<'flowchart' | 'mindmap' | 'architecture' | 'journey' | 'roadmap' | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [aiLoadPercent, setAiLoadPercent] = useState(0);
+  const [aiLoadStepText, setAiLoadStepText] = useState("");
+  const [aiTotalElements, setAiTotalElements] = useState(0);
+  const [aiDrawnElements, setAiDrawnElements] = useState(0);
+
+  const handleGenerateAIDiagram = async (presetType: 'flowchart' | 'mindmap' | 'architecture' | 'journey' | 'roadmap', customPromptText?: string) => {
+    const finalPrompt = (customPromptText || aiPrompt || "").trim();
+    
+    if (!finalPrompt) {
+      setAiError("Please supply a concept or topic description.");
+      return;
+    }
+
+    setIsGeneratingAI(true);
+    setAiError(null);
+    setLastAttemptedPrompt(finalPrompt);
+    setLastAttemptedType(presetType);
+    setAiGeneratingMessage(`Designing your ${presetType.toUpperCase()} showing "${finalPrompt}"...`);
+    
+    // Set immediate loading stages
+    setAiLoadPercent(5);
+    setAiLoadStepText("Connecting to Yukti Co-Designer API servers...");
+    setAiTotalElements(0);
+    setAiDrawnElements(0);
+
+    let progress = 5;
+    const progressInterval = setInterval(() => {
+      progress += Math.floor(Math.random() * 8) + 3;
+      if (progress > 85) {
+        progress = 85;
+      }
+      setAiLoadPercent(progress);
+      
+      if (progress < 25) {
+        setAiLoadStepText("Structuring layout context vectors for Gemini...");
+      } else if (progress < 45) {
+        setAiLoadStepText("Calibrating shape coordinates & diagram bounds...");
+      } else if (progress < 68) {
+        setAiLoadStepText("Syncing dynamic connectors and routing alignment...");
+      } else {
+        setAiLoadStepText("Validating node canvas rendering boundaries...");
+      }
+    }, 280);
+    
+    try {
+      const response = await fetch("/api/ai/generate-diagram", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: finalPrompt,
+          type: presetType,
+        }),
+      });
+
+      let resJson: any;
+      const responseText = await response.text();
+      try {
+        resJson = JSON.parse(responseText);
+      } catch (parseErr) {
+        throw new Error(`The server returned an invalid response (not JSON). Raw Response: ${responseText.substring(0, 300) || "Empty response"}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(resJson.error || `Server responded with status ${response.status}`);
+      }
+      if (!resJson.shapes || !Array.isArray(resJson.shapes)) {
+        throw new Error("AI responded but returned an empty or invalid format.");
+      }
+
+      clearInterval(progressInterval);
+      setAiLoadPercent(88);
+      setAiLoadStepText("Specifications received! Initiating layout assembly...");
+
+      if (resJson.isFallback) {
+        setFallbackNotice(`Yukti Co-Designer (Offline Local Backup mode): Placed a high-quality visual blueprint template for "${finalPrompt}"`);
+        setTimeout(() => {
+          setFallbackNotice(null);
+        }, 9000);
+      }
+
+      const nowTime = Date.now();
+      const generatedWhiteboardShapes: Shape[] = resJson.shapes.map((s: any, idx: number) => {
+        const shapeId = `ai-${presetType}-${nowTime}-${idx}-${Math.floor(Math.random() * 10000)}`;
+        return {
+          id: shapeId,
+          type: s.type || 'rect',
+          x: Number(s.x) || (300 + idx * 30),
+          y: Number(s.y) || (200 + idx * 20),
+          width: Number(s.width) || 160,
+          height: Number(s.height) || 90,
+          text: s.text,
+          fillColor: s.fillColor || (s.type === 'sticky' ? '#FFF9DB' : '#FFFFFF'),
+          strokeColor: s.strokeColor || '#FF3B30',
+          stroke: s.stroke || 'solid',
+          flipX: s.flipX || false,
+          flipY: s.flipY || false,
+          strokeWidth: 4,
+          layer: 2
+        };
+      });
+
+      const totalToDraw = generatedWhiteboardShapes.length;
+      setAiTotalElements(totalToDraw);
+      setAiDrawnElements(0);
+
+      // Perform beautiful staggered real-time rendering sequentially
+      let currentDrawn = 0;
+      await new Promise<void>((resolve) => {
+        const drawInterval = setInterval(() => {
+          if (currentDrawn < totalToDraw) {
+            const nextShape = generatedWhiteboardShapes[currentDrawn];
+            setShapes((prev) => [...prev, nextShape]);
+            currentDrawn++;
+            setAiDrawnElements(currentDrawn);
+            const drawPercent = 88 + Math.floor((currentDrawn / totalToDraw) * 12);
+            setAiLoadPercent(Math.min(drawPercent, 100));
+            setAiLoadStepText(`Drafting canvas node ${currentDrawn} of ${totalToDraw} [${nextShape.text ? nextShape.text.slice(0, 18) : nextShape.type}]...`);
+          } else {
+            clearInterval(drawInterval);
+            setAiLoadPercent(100);
+            setAiLoadStepText("Fully drawn! Autosaving updates securely to cloud storage...");
+            
+            // Set newly generated items as active selection inside whiteboard
+            const addedIds = generatedWhiteboardShapes.map((ns) => ns.id);
+            setSelection(addedIds);
+
+            // Auto zoom-to-fit coordinates after short layout timeout
+            setTimeout(() => {
+              if (containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect();
+                useCanvasStore.getState().zoomToFit(rect.width, rect.height);
+              }
+              resolve();
+            }, 300);
+          }
+        }, 120); // 120ms interval per shape renders in ~1.5s total & looks super interactive!
+      });
+
+      // Successfully finished
+      setAiPrompt("");
+      setIsAiMenuOpen(false);
+    } catch (err: any) {
+      clearInterval(progressInterval);
+      console.error("AI Diagram Gen Error:", err);
+      setAiError(err.message || "An unexpected error occurred during AI generation.");
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
+
+  const handleDeleteBoardFromHeader = () => {
+    setShowCanvasDeleteModal(true);
+  };
+
+  const confirmDeleteBoardFromHeader = async () => {
     if (boardId && boardId !== 'new') {
-      if (confirm("Are you sure you want to delete this board? This action is permanent.")) {
-        try {
-          await deleteBoard(boardId);
-          nav('/app');
-        } catch (err) {
-          console.error("Failed to delete board from header:", err);
-          alert("Failed to delete board");
-        }
+      setIsHeaderDeletingActive(true);
+      try {
+        await deleteBoard(boardId);
+        setShowCanvasDeleteModal(false);
+        nav('/app');
+      } catch (err) {
+        console.error("Failed to delete board from header:", err);
+        alert("Failed to delete board");
+      } finally {
+        setIsHeaderDeletingActive(false);
       }
     }
   };
 
-  const handleRenameBoardFromHeader = async () => {
+  const handleRenameBoardFromHeader = () => {
+    if (dbBoard) {
+      setTempCanvasTitle(dbBoard.title || "Untitled Board");
+      setShowCanvasRenameModal(true);
+    }
+  };
+
+  const confirmRenameBoardFromHeader = async () => {
     if (boardId && boardId !== 'new' && dbBoard) {
-      const newTitle = prompt("Enter new title for this board:", dbBoard.title || 'Untitled');
-      if (newTitle !== null) {
-        const trimmed = newTitle.trim();
-        if (!trimmed) {
-          alert("Board title cannot be empty!");
-          return;
-        }
-        try {
-          const updated = await updateBoard(boardId, { title: trimmed });
-          setDbBoard(updated);
-        } catch (err) {
-          console.error("Failed to rename board from header:", err);
-          alert("Failed to rename board");
-        }
+      const trimmed = tempCanvasTitle.trim();
+      if (!trimmed) {
+        alert("Board title cannot be empty!");
+        return;
+      }
+      setIsHeaderRenamingActive(true);
+      try {
+        const updated = await updateBoard(boardId, { title: trimmed });
+        setDbBoard(updated);
+        setShowCanvasRenameModal(false);
+      } catch (err) {
+        console.error("Failed to rename board from header:", err);
+        alert("Failed to rename board");
+      } finally {
+        setIsHeaderRenamingActive(false);
       }
     }
   };
@@ -282,6 +525,21 @@ export default function CanvasPage() {
       }
     }
   }, [boardId, setShapes, setViewport, user]);
+
+  // Trigger AI generation if query params are present on fresh empty boards
+  useEffect(() => {
+    const queryAiPrompt = searchParams.get('aiPrompt');
+    const queryAiType = searchParams.get('aiType');
+
+    if (queryAiPrompt && queryAiType && dbBoard && shapes.length === 0 && !isGeneratingAI) {
+      // Clear query params from url so they don't re-trigger on refresh
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+      
+      // Trigger diagram gen!
+      handleGenerateAIDiagram(queryAiType as any, queryAiPrompt);
+    }
+  }, [dbBoard, shapes.length]);
 
   // Track cursor movement for realtime
   const handlePointerMoveCanvas = (e: React.PointerEvent) => {
@@ -414,6 +672,90 @@ export default function CanvasPage() {
     isResizing: false, shapeId: null, handle: null, startX: 0, startY: 0, initialWidth: 0, initialHeight: 0, initialX: 0, initialY: 0 
   });
 
+  // Smart Connectors & Elastic Arrows States & Refs
+  interface AnchorPoint {
+    shapeId: string;
+    position: 't' | 'r' | 'b' | 'l';
+    x: number;
+    y: number;
+  }
+  interface DragLineInfo {
+    shapeId: string;
+    isEnd: 'start' | 'end';
+  }
+
+  const [activeSnap, setActiveSnap] = useState<AnchorPoint | null>(null);
+  const dragLineInfo = useRef<DragLineInfo | null>(null);
+
+  const getShapeAnchors = (s: Shape): AnchorPoint[] => {
+    if (['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector', 'pencil', 'brush', 'highlight', 'laser', 'eraser'].includes(s.type)) {
+      return [];
+    }
+    return [
+      { shapeId: s.id, position: 't', x: s.x + s.width / 2, y: s.y },
+      { shapeId: s.id, position: 'r', x: s.x + s.width, y: s.y + s.height / 2 },
+      { shapeId: s.id, position: 'b', x: s.x + s.width / 2, y: s.y + s.height },
+      { shapeId: s.id, position: 'l', x: s.x, y: s.y + s.height / 2 },
+    ];
+  };
+
+  const getAllAnchors = (shapesList: Shape[]): AnchorPoint[] => {
+    const anchors: AnchorPoint[] = [];
+    shapesList.forEach(s => {
+      anchors.push(...getShapeAnchors(s));
+    });
+    return anchors;
+  };
+
+  const getLineCoords = (s: Shape, shapesList: Shape[]) => {
+    let x1 = s.flipX ? s.x + s.width : s.x;
+    let y1 = s.flipY ? s.y + s.height : s.y;
+    let x2 = s.flipX ? s.x : s.x + s.width;
+    let y2 = s.flipY ? s.y : s.y + s.height;
+
+    if (s.fromId) {
+      const parent = shapesList.find(parentShape => parentShape.id === s.fromId);
+      if (parent) {
+        const pos = s.fromPosition || 'center';
+        if (pos === 't') {
+          x1 = parent.x + parent.width / 2;
+          y1 = parent.y;
+        } else if (pos === 'r') {
+          x1 = parent.x + parent.width;
+          y1 = parent.y + parent.height / 2;
+        } else if (pos === 'b') {
+          x1 = parent.x + parent.width / 2;
+          y1 = parent.y + parent.height;
+        } else if (pos === 'l') {
+          x1 = parent.x;
+          y1 = parent.y + parent.height / 2;
+        }
+      }
+    }
+
+    if (s.toId) {
+      const parent = shapesList.find(parentShape => parentShape.id === s.toId);
+      if (parent) {
+        const pos = s.toPosition || 'center';
+        if (pos === 't') {
+          x2 = parent.x + parent.width / 2;
+          y2 = parent.y;
+        } else if (pos === 'r') {
+          x2 = parent.x + parent.width;
+          y2 = parent.y + parent.height / 2;
+        } else if (pos === 'b') {
+          x2 = parent.x + parent.width / 2;
+          y2 = parent.y + parent.height;
+        } else if (pos === 'l') {
+          x2 = parent.x;
+          y2 = parent.y + parent.height / 2;
+        }
+      }
+    }
+
+    return { x1, y1, x2, y2 };
+  };
+
   const [selectionBox, setSelectionBox] = useState<{x: number, y: number, width: number, height: number} | null>(null);
   const [selectedColor, setSelectedColor] = useState('#FFFFFF');
   const [selectedStrokeColor, setSelectedStrokeColor] = useState('#000000');
@@ -505,7 +847,7 @@ export default function CanvasPage() {
     }
   }, [viewport, zoom, pan]);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.target === containerRef.current || (e.target as Element).tagName === 'svg' || ((e.target as Element).tagName === 'rect' && (e.target as Element).getAttribute('fill') === 'url(#canvas-grid)')) {
       if (activeTool === 'select' || activeTool === 'hand' || e.button === 1 || e.button === 2) {
         // Start pan
@@ -539,14 +881,41 @@ export default function CanvasPage() {
       }
       
       const coords = getCanvasCoords(e);
+      let draftX = coords.x;
+      let draftY = coords.y;
+      let fromId: string | undefined = undefined;
+      let fromPosition: 't' | 'r' | 'b' | 'l' | 'center' | undefined = undefined;
+
+      const isLineLike = ['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector'].includes(activeTool);
+      if (isLineLike) {
+        const anchors = getAllAnchors(shapes);
+        let closest: AnchorPoint | null = null;
+        let minDist = 20; // snap threshold
+        anchors.forEach(a => {
+          const dist = Math.hypot(coords.x - a.x, coords.y - a.y);
+          if (dist < minDist) {
+            closest = a;
+            minDist = dist;
+          }
+        });
+        if (closest) {
+          draftX = closest.x;
+          draftY = closest.y;
+          fromId = closest.shapeId;
+          fromPosition = closest.position;
+        }
+      }
+
       setIsDrawing(true);
       setDraftShape({
         id: Date.now().toString(),
         type: activeTool as ShapeType,
-        x: coords.x,
-        y: coords.y,
+        x: draftX,
+        y: draftY,
         width: 0,
         height: 0,
+        fromId,
+        fromPosition,
         color: selectedColor, // legacy fallback if something breaks
         fillColor: selectedColor,
         strokeColor: selectedStrokeColor,
@@ -558,6 +927,72 @@ export default function CanvasPage() {
 
   const handlePointerMove = (e: React.PointerEvent) => {
     handlePointerMoveCanvas(e);
+
+    if (dragLineInfo.current) {
+      const coords = getCanvasCoords(e);
+      const targetLine = shapes.find(s => s.id === dragLineInfo.current!.shapeId);
+      if (targetLine) {
+        const anchors = getAllAnchors(shapes);
+        let snap: AnchorPoint | null = null;
+        let minDist = 20;
+        anchors.forEach(a => {
+          if (a.shapeId === targetLine.id) return;
+          if (dragLineInfo.current!.isEnd === 'start' && targetLine.toId && a.shapeId === targetLine.toId) return;
+          if (dragLineInfo.current!.isEnd === 'end' && targetLine.fromId && a.shapeId === targetLine.fromId) return;
+
+          const dist = Math.hypot(coords.x - a.x, coords.y - a.y);
+          if (dist < minDist) {
+            snap = a;
+            minDist = dist;
+          }
+        });
+
+        const newX = snap ? snap.x : coords.x;
+        const newY = snap ? snap.y : coords.y;
+
+        const currentCoords = getLineCoords(targetLine, shapes);
+
+        if (dragLineInfo.current.isEnd === 'start') {
+          const x2 = currentCoords.x2;
+          const y2 = currentCoords.y2;
+          const width = x2 - newX;
+          const height = y2 - newY;
+          const flipX = width < 0;
+          const flipY = height < 0;
+
+          updateShape(targetLine.id, {
+            x: flipX ? x2 : newX,
+            y: flipY ? y2 : newY,
+            width: Math.abs(width),
+            height: Math.abs(height),
+            flipX,
+            flipY,
+            fromId: snap ? snap.shapeId : undefined,
+            fromPosition: snap ? snap.position : undefined,
+          });
+        } else {
+          const x1 = currentCoords.x1;
+          const y1 = currentCoords.y1;
+          const width = newX - x1;
+          const height = newY - y1;
+          const flipX = width < 0;
+          const flipY = height < 0;
+
+          updateShape(targetLine.id, {
+            x: flipX ? newX : x1,
+            y: flipY ? newY : y1,
+            width: Math.abs(width),
+            height: Math.abs(height),
+            flipX,
+            flipY,
+            toId: snap ? snap.shapeId : undefined,
+            toPosition: snap ? snap.position : undefined,
+          });
+        }
+        setActiveSnap(snap);
+      }
+      return;
+    }
 
     if (panInfo.current.isPanning) {
       const dx = e.clientX - panInfo.current.startX;
@@ -655,11 +1090,38 @@ export default function CanvasPage() {
 
     if (isDrawing && draftShape) {
       const coords = getCanvasCoords(e);
-      setDraftShape({
-        ...draftShape,
-        width: coords.x - draftShape.x,
-        height: coords.y - draftShape.y
-      });
+      const isLineLike = ['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector'].includes(draftShape.type);
+      if (isLineLike) {
+        const anchors = getAllAnchors(shapes);
+        let closest: AnchorPoint | null = null;
+        let minDist = 20; // snap threshold
+        anchors.forEach(a => {
+          if (draftShape.fromId && a.shapeId === draftShape.fromId) return;
+          const dist = Math.hypot(coords.x - a.x, coords.y - a.y);
+          if (dist < minDist) {
+            closest = a;
+            minDist = dist;
+          }
+        });
+
+        const endX = closest ? closest.x : coords.x;
+        const endY = closest ? closest.y : coords.y;
+
+        setDraftShape({
+          ...draftShape,
+          width: endX - draftShape.x,
+          height: endY - draftShape.y,
+          toId: closest ? closest.shapeId : undefined,
+          toPosition: closest ? closest.position : undefined,
+        });
+        setActiveSnap(closest);
+      } else {
+        setDraftShape({
+          ...draftShape,
+          width: coords.x - draftShape.x,
+          height: coords.y - draftShape.y
+        });
+      }
     } else if (dragInfo.current.isDragging && dragInfo.current.shapeId) {
       const coords = getCanvasCoords(e);
       const dx = coords.x - dragInfo.current.startX;
@@ -685,6 +1147,13 @@ export default function CanvasPage() {
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (dragLineInfo.current) {
+      dragLineInfo.current = null;
+      setActiveSnap(null);
+      if (e.target instanceof HTMLElement) e.target.releasePointerCapture(e.pointerId);
+      return;
+    }
+
     if (panInfo.current.isPanning) {
       panInfo.current.isPanning = false;
       if (e.target instanceof HTMLElement) e.target.releasePointerCapture(e.pointerId);
@@ -707,38 +1176,48 @@ export default function CanvasPage() {
 
     if (isDrawing && draftShape) {
       let finalShape = { ...draftShape };
-      finalShape.flipX = finalShape.width < 0;
-      finalShape.flipY = finalShape.height < 0;
+      const isLineLike = ['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector'].includes(finalShape.type);
       
-      if (finalShape.width < 0) {
-        finalShape.x += finalShape.width;
+      if (isLineLike) {
+        finalShape.flipX = finalShape.width < 0;
+        finalShape.flipY = finalShape.height < 0;
         finalShape.width = Math.abs(finalShape.width);
-      }
-      if (finalShape.height < 0) {
-        finalShape.y += finalShape.height;
         finalShape.height = Math.abs(finalShape.height);
-      }
-      if (finalShape.width < 5 && finalShape.height < 5) {
-        if (finalShape.type === 'sticky') {
-          finalShape.width = 150;
-          finalShape.height = 150;
-        } else if (finalShape.type === 'text') {
-           finalShape.width = 100;
-           finalShape.height = 40;
-           finalShape.text = "Type here";
-        } else {
-          finalShape.width = 100;
-          finalShape.height = 100;
+      } else {
+        finalShape.flipX = finalShape.width < 0;
+        finalShape.flipY = finalShape.height < 0;
+        
+        if (finalShape.width < 0) {
+          finalShape.x += finalShape.width;
+          finalShape.width = Math.abs(finalShape.width);
         }
-      }
-      if ((finalShape.type === 'text' || finalShape.type === 'sticky') && !finalShape.text) {
-         finalShape.text = "New text";
+        if (finalShape.height < 0) {
+          finalShape.y += finalShape.height;
+          finalShape.height = Math.abs(finalShape.height);
+        }
+        if (finalShape.width < 5 && finalShape.height < 5) {
+          if (finalShape.type === 'sticky') {
+            finalShape.width = 150;
+            finalShape.height = 150;
+          } else if (finalShape.type === 'text') {
+             finalShape.width = 100;
+             finalShape.height = 40;
+             finalShape.text = "Type here";
+          } else {
+            finalShape.width = 100;
+            finalShape.height = 100;
+          }
+        }
+        if ((finalShape.type === 'text' || finalShape.type === 'sticky') && !finalShape.text) {
+           finalShape.text = "New text";
+        }
       }
       addShape(finalShape);
       setIsDrawing(false);
       setDraftShape(null);
       setActiveTool('select');
       setSelection([finalShape.id]);
+      setActiveSnap(null);
     }
     
     if (dragInfo.current.isDragging) {
@@ -996,6 +1475,90 @@ export default function CanvasPage() {
 
         {/* Canvas Area */}
         <div className="flex-1 w-full h-full relative outline-none bg-white" tabIndex={0}>
+            {fallbackNotice && (
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 max-w-sm sm:max-w-md w-[calc(100%-2rem)] bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl px-4 py-3.5 shadow-xl flex items-start gap-2.5 backdrop-blur-sm">
+                <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                <div className="flex-1">
+                  <p className="text-xs font-bold text-amber-900 leading-normal mb-0.5">Model High Demand Fallback</p>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">{fallbackNotice}</p>
+                </div>
+                <button onClick={() => setFallbackNotice(null)} className="text-amber-600 hover:text-amber-800 cursor-pointer shrink-0 p-0.5 hover:bg-amber-100 rounded">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+             {(isGeneratingAI || (aiError && shapes.length === 0)) && (
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+                {isGeneratingAI ? (
+                  <>
+                    <div className="relative mb-6">
+                      <div className="absolute inset-0 rounded-full bg-[#FFD60A]/20 animate-ping -m-4"></div>
+                      <div className="w-16 h-16 rounded-full bg-white border border-gray-200 shadow-xl flex items-center justify-center text-[#FFD60A]">
+                        <Sparkles size={32} className="animate-spin text-[#FFD60A]" />
+                      </div>
+                    </div>
+                    <h3 className="font-bold text-lg text-gray-900 mb-1">Yukti AI Co-Designer</h3>
+                    <p className="text-xs text-gray-500 font-medium mb-3">{aiGeneratingMessage}</p>
+
+                    {/* Premium Live Real-time Progress Bar HUD */}
+                    <div className="w-full max-w-sm bg-gray-50 border border-gray-150 rounded-2xl p-4 shadow-sm animate-scale-in">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Canvas Construction</span>
+                        <span className="text-xs font-extrabold text-[#FF3B30]">{aiLoadPercent}%</span>
+                      </div>
+                      
+                      {/* Progress bar line */}
+                      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-amber-400 via-rose-500 to-[#FF3B30] transition-all duration-300"
+                          style={{ width: `${aiLoadPercent}%` }}
+                        ></div>
+                      </div>
+
+                      {/* Step description */}
+                      <p className="text-[11px] text-gray-600 font-semibold mt-3 text-left flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] animate-ping shrink-0" />
+                        <span className="truncate">{aiLoadStepText || "Compiling system architecture..."}</span>
+                      </p>
+
+                      {/* Elements drawn counter indicator */}
+                      {aiTotalElements > 0 && (
+                        <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                          <span>Drawn Elements:</span>
+                          <span className="text-[#FF3B30] font-black">
+                            {aiDrawnElements} / {aiTotalElements} shapes
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="max-w-md bg-white border border-gray-100 rounded-2xl p-6 shadow-2xl animate-scale-in">
+                    <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 mx-auto mb-4 animate-bounce">
+                      <Bot size={24} />
+                    </div>
+                    <h3 className="font-bold text-lg text-gray-900 mb-2">Yukti Co-Designer Error</h3>
+                    <p className="text-sm text-gray-600 mb-4">{aiError}</p>
+                    <div className="flex gap-3 justify-center">
+                      {lastAttemptedType && lastAttemptedPrompt && (
+                        <button 
+                          onClick={() => handleGenerateAIDiagram(lastAttemptedType, lastAttemptedPrompt)}
+                          className="px-4 py-2 bg-[#FF3B30] hover:bg-[#D63025] text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition"
+                        >
+                          Retry Generation
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => setAiError(null)}
+                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl cursor-pointer transition"
+                      >
+                        Draw Blank Board
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div 
               ref={containerRef}
               className="w-full h-full overflow-hidden relative cursor-crosshair touch-none" 
@@ -1063,10 +1626,10 @@ export default function CanvasPage() {
                   {[...shapes, ...(draftShape ? [draftShape] : [])].map(shape => (shape.type === 'arrow' || shape.type === 'doubleArrow' || shape.type === 'curvedArrow' || shape.type === 'connector') ? (
                     <g key={`defs-${shape.id}`}>
                       <marker id={`arrowhead-${shape.id}`} markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                         <polygon points="0 0, 10 3.5, 0 7" fill={shape.stroke === 'none' ? 'transparent' : (shape.color === '#111111' ? '#000' : (shape.color || '#111111'))} />
+                         <polygon points="0 0, 10 3.5, 0 7" fill={shape.stroke === 'none' ? 'transparent' : (shape.strokeColor || (shape.color === '#111111' ? '#000' : (shape.color || '#111111')))} />
                       </marker>
                       <marker id={`arrowhead-start-${shape.id}`} markerWidth="10" markerHeight="7" refX="1" refY="3.5" orient="auto">
-                         <polygon points="10 0, 0 3.5, 10 7" fill={shape.stroke === 'none' ? 'transparent' : (shape.color === '#111111' ? '#000' : (shape.color || '#111111'))} />
+                         <polygon points="10 0, 0 3.5, 10 7" fill={shape.stroke === 'none' ? 'transparent' : (shape.strokeColor || (shape.color === '#111111' ? '#000' : (shape.color || '#111111')))} />
                       </marker>
                     </g>
                   ) : null)}
@@ -1075,49 +1638,111 @@ export default function CanvasPage() {
                 <rect width="100%" height="100%" fill="url(#canvas-grid)" pointerEvents="none" />
 
                 <g transform={`translate(${viewport.x}, ${viewport.y}) scale(${viewport.zoom})`}>
+ 
+                  {[...shapes, ...(draftShape ? [draftShape] : [])].map((shape) => {
+                    const isLineLike = ['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector'].includes(shape.type);
+                    const transformStr = isLineLike ? 'translate(0, 0)' : `translate(${shape.x}, ${shape.y})`;
+                    const { x1, y1, x2, y2 } = getLineCoords(shape, shapes);
+                    const isSel = selectedShapeIds.includes(shape.id);
 
-                  {[...shapes, ...(draftShape ? [draftShape] : [])].map((shape) => (
-                    <g
-                      key={shape.id}
-                      transform={`translate(${shape.x}, ${shape.y})`}
-                      className={`pointer-events-auto origin-center ${activeTool === 'select' || activeTool === 'hand' ? 'cursor-move' : 'cursor-crosshair'}`}
-                      onPointerDown={(e) => handleShapePointerDown(e, shape)}
-                    >
-                      <ShapeRenderer 
-                        shape={shape} 
-                        isSelected={selectedShapeIds.includes(shape.id)} 
-                        updateShape={updateShape} 
-                        activeTool={activeTool}
-                      />
-                      {/* Selection Outline */}
-                      {selectedShapeIds.includes(shape.id) && (
-                        <g pointerEvents="none">
-                          <rect 
-                            x={-4} y={-4} 
-                            width={Math.max(1, shape.width) + 8} 
-                            height={Math.max(1, shape.height) + 8} 
-                            fill="none" 
-                            stroke="#007AFF" 
-                            strokeWidth={1.5 / viewport.zoom} 
-                            vectorEffect="non-scaling-stroke"
-                          />
-                          {/* Edge Handles */}
-                          <rect x={Math.max(1, shape.width) / 2 - 2} y={-7} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ns-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 't')} />
-                          <rect x={Math.max(1, shape.width) / 2 - 2} y={Math.max(1, shape.height) + 1} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ns-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'b')} />
-                          <rect x={-7} y={Math.max(1, shape.height) / 2 - 2} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ew-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'l')} />
-                          <rect x={Math.max(1, shape.width) + 1} y={Math.max(1, shape.height) / 2 - 2} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ew-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'r')} />
-                          
-                          {/* Corner Handles */}
-                          <rect x={-7} y={-7} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nwse-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'tl')} />
-                          <rect x={Math.max(1, shape.width) + 1} y={-7} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nesw-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'tr')} />
-                          <rect x={Math.max(1, shape.width) + 1} y={Math.max(1, shape.height) + 1} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nwse-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'br')} />
-                          <rect x={-7} y={Math.max(1, shape.height) + 1} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nesw-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'bl')} />
-                        </g>
-                      )}
-                      
-                      {/* Remote cursor selection boxes could go here if we wanted */}
+                    return (
+                      <g
+                        key={shape.id}
+                        transform={transformStr}
+                        className={`pointer-events-auto origin-center ${activeTool === 'select' || activeTool === 'hand' ? (isLineLike ? 'cursor-default' : 'cursor-move') : 'cursor-crosshair'}`}
+                        onPointerDown={(e) => handleShapePointerDown(e, shape)}
+                      >
+                        <ShapeRenderer 
+                          shape={shape} 
+                          isSelected={isSel} 
+                          updateShape={updateShape} 
+                          activeTool={activeTool}
+                        />
+                        {/* Selection Outline */}
+                        {isSel && (
+                          <g pointerEvents="auto">
+                            {isLineLike ? (
+                              <>
+                                {/* Subtle guide line connecting start and end */}
+                                <line 
+                                  x1={x1} y1={y1} x2={x2} y2={y2} 
+                                  fill="none" stroke="#007AFF" strokeWidth={1 / viewport.zoom} 
+                                  strokeDasharray="4,4" 
+                                  pointerEvents="none"
+                                />
+                                {/* Blue circle start handle */}
+                                <circle 
+                                  cx={x1} cy={y1} r={6 / viewport.zoom} 
+                                  fill="#FFFFFF" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} 
+                                  style={{ cursor: 'move' }}
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                    dragLineInfo.current = { shapeId: shape.id, isEnd: 'start' };
+                                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                                  }}
+                                />
+                                {/* Blue circle end handle */}
+                                <circle 
+                                  cx={x2} cy={y2} r={6 / viewport.zoom} 
+                                  fill="#FFFFFF" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} 
+                                  style={{ cursor: 'move' }}
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                    dragLineInfo.current = { shapeId: shape.id, isEnd: 'end' };
+                                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                                  }}
+                                />
+                              </>
+                            ) : (
+                              <g pointerEvents="none">
+                                <rect 
+                                  x={-4} y={-4} 
+                                  width={Math.max(1, shape.width) + 8} 
+                                  height={Math.max(1, shape.height) + 8} 
+                                  fill="none" 
+                                  stroke="#007AFF" 
+                                  strokeWidth={1.5 / viewport.zoom} 
+                                  vectorEffect="non-scaling-stroke"
+                                />
+                                {/* Edge Handles */}
+                                <rect x={Math.max(1, shape.width) / 2 - 2} y={-7} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ns-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 't')} />
+                                <rect x={Math.max(1, shape.width) / 2 - 2} y={Math.max(1, shape.height) + 1} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ns-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'b')} />
+                                <rect x={-7} y={Math.max(1, shape.height) / 2 - 2} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ew-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'l')} />
+                                <rect x={Math.max(1, shape.width) + 1} y={Math.max(1, shape.height) / 2 - 2} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'ew-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'r')} />
+                                
+                                {/* Corner Handles */}
+                                <rect x={-7} y={-7} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nwse-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'tl')} />
+                                <rect x={Math.max(1, shape.width) + 1} y={-7} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nesw-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'tr')} />
+                                <rect x={Math.max(1, shape.width) + 1} y={Math.max(1, shape.height) + 1} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nwse-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'br')} />
+                                <rect x={-7} y={Math.max(1, shape.height) + 1} width={6} height={6} fill="#fff" stroke="#007AFF" strokeWidth={1.5 / viewport.zoom} vectorEffect="non-scaling-stroke" pointerEvents="auto" style={{cursor: 'nesw-resize'}} onPointerDown={(e) => handleResizePointerDown(e, shape, 'bl')} />
+                              </g>
+                            )}
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {/* Anchor Points overlay for snapping */}
+                  {(['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector'].includes(activeTool) || isDrawing || dragLineInfo.current) && (
+                    <g pointerEvents="none">
+                      {getAllAnchors(shapes).map((anchor, idx) => {
+                        const isSnapped = activeSnap && activeSnap.shapeId === anchor.shapeId && activeSnap.position === anchor.position;
+                        return (
+                          <g key={`anchor-${idx}`} transform={`translate(${anchor.x}, ${anchor.y})`}>
+                            {isSnapped ? (
+                              <>
+                                <circle r={14 / viewport.zoom} fill="none" stroke="#FF9500" strokeWidth={1.5 / viewport.zoom} className="animate-ping" style={{ transformOrigin: 'center' }} />
+                                <circle r={7 / viewport.zoom} fill="#FF9500" stroke="#FFFFFF" strokeWidth={2 / viewport.zoom} />
+                              </>
+                            ) : (
+                              <circle r={5 / viewport.zoom} fill="#007AFF" fillOpacity={0.8} stroke="#FFFFFF" strokeWidth={1.5 / viewport.zoom} />
+                            )}
+                          </g>
+                        );
+                      })}
                     </g>
-                  ))}
+                  )}
 
                   {/* Remote Cursors */}
                   {collaborators.map(collab => collab.cursor && (
@@ -1194,42 +1819,171 @@ export default function CanvasPage() {
             </div>
 
                   {/* Floating AI Assistant */}
-                  <div className="absolute bottom-4 right-4 md:right-6 md:bottom-6 z-40 group">
+                  <div className="absolute bottom-4 right-4 md:right-6 md:bottom-6 z-40">
                      {/* Menu items */}
-                     <div className="absolute bottom-16 right-0 w-[260px] xs:w-64 max-w-[calc(100vw-32px)] bg-white rounded-xl shadow-xl border border-gray-200 p-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all translate-y-2 group-hover:translate-y-0">
-                        <div className="px-3 py-2 border-b border-gray-100 mb-2">
+                     <div className={`absolute bottom-16 right-0 w-[280px] xs:w-72 max-w-[calc(100vw-32px)] bg-white rounded-xl shadow-xl border border-gray-200 p-3 transition-all transform duration-150 origin-bottom-right ${isAiMenuOpen ? 'opacity-100 scale-100 visible' : 'opacity-0 scale-95 invisible'}`}>
+                        <div className="px-3 py-2 border-b border-gray-100 mb-2 flex items-center justify-between">
                            <div className="flex items-center gap-2">
                               <Sparkles size={14} className="text-[#FFD60A]" />
-                              <span className="font-semibold text-xs text-[#111111]">Yukti AI Assistant</span>
+                              <span className="font-semibold text-xs text-[#111111]">
+                                {!selectedPreset ? 'Yukti AI Assistant' : (
+                                  selectedPreset === 'flowchart' ? 'AI Flowchart' : 
+                                  selectedPreset === 'mindmap' ? 'AI Mind Map' :
+                                  selectedPreset === 'architecture' ? 'AI Architecture' :
+                                  selectedPreset === 'journey' ? 'AI User Journey' : 'AI Product Roadmap'
+                                )}
+                              </span>
                            </div>
+                           {selectedPreset ? (
+                             <button 
+                               onClick={() => setSelectedPreset(null)} 
+                               className="text-gray-500 hover:text-gray-700 text-[10px] font-semibold px-1.5 py-0.5 rounded hover:bg-gray-100"
+                             >
+                               ← Back
+                             </button>
+                           ) : (
+                             <button 
+                               onClick={() => setIsAiMenuOpen(false)} 
+                               className="text-gray-400 hover:text-gray-600 text-xs font-bold px-1.5 py-0.5 rounded hover:bg-gray-50"
+                             >
+                               ✕
+                             </button>
+                           )}
                         </div>
-                        <div className="space-y-1">
-                           <button className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center gap-2">
-                              <Network size={14} className="text-gray-400" /> Generate Flowchart
-                           </button>
-                           <button className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center gap-2">
-                              <Bot size={14} className="text-gray-400" /> Generate Mind Map
-                           </button>
-                           <button className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center gap-2">
-                              <Box size={14} className="text-gray-400" /> Generate Architecture
-                           </button>
-                           <button className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center gap-2">
-                              <MousePointerClick size={14} className="text-gray-400" /> Generate User Journey
-                           </button>
-                           <button className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center gap-2">
-                              <Map size={14} className="text-gray-400" /> Generate Product Roadmap
-                           </button>
-                        </div>
-                        <div className="mt-2 pt-2 border-t border-gray-100 px-2">
-                           <div className="relative">
-                              <input type="text" placeholder="Or type a prompt..." className="w-full bg-gray-50 border border-gray-200 rounded-md py-1.5 pl-3 pr-8 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#FFD60A] transition-all" />
-                              <button className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-[#111111] rounded flex items-center justify-center text-white"><ArrowRight size={10} /></button>
-                           </div>
-                        </div>
+                        
+                        {aiError && (
+                          <div className="mx-2 mb-2 p-2 bg-red-50 text-red-600 rounded text-[10px] leading-relaxed border border-red-100 max-h-24 overflow-y-auto">
+                            {aiError}
+                          </div>
+                        )}
+
+                        {!selectedPreset ? (
+                          <>
+                            <div className="space-y-1">
+                               <button 
+                                 onClick={() => {
+                                   setSelectedPreset('flowchart');
+                                   setAiPrompt("User signup with email validation steps");
+                                 }}
+                                 className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center justify-between"
+                               >
+                                 <span className="flex items-center gap-2">
+                                   <Network size={14} className="text-[#FF3B30]" /> Generate Flowchart
+                                 </span>
+                                 <span className="text-[9px] text-gray-400 font-mono">Steps</span>
+                               </button>
+                               <button 
+                                 onClick={() => {
+                                   setSelectedPreset('mindmap');
+                                   setAiPrompt("Marketing priorities brainstorm");
+                                 }}
+                                 className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center justify-between"
+                               >
+                                 <span className="flex items-center gap-2">
+                                   <Bot size={14} className="text-orange-500" /> Generate Mind Map
+                                 </span>
+                                 <span className="text-[9px] text-gray-400 font-mono">Hub</span>
+                               </button>
+                               <button 
+                                 onClick={() => {
+                                   setSelectedPreset('architecture');
+                                   setAiPrompt("Highly-available real-time chat with cloud services");
+                                 }}
+                                 className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center justify-between"
+                               >
+                                 <span className="flex items-center gap-2">
+                                   <Box size={14} className="text-blue-500" /> Generate Architecture
+                                 </span>
+                                 <span className="text-[9px] text-gray-400 font-mono">Layers</span>
+                               </button>
+                               <button 
+                                 onClick={() => {
+                                   setSelectedPreset('journey');
+                                   setAiPrompt("New mobile app user registration journey map");
+                                 }}
+                                 className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center justify-between"
+                               >
+                                 <span className="flex items-center gap-2">
+                                   <MousePointerClick size={14} className="text-pink-500" /> Generate User Journey
+                                 </span>
+                                 <span className="text-[9px] text-gray-400 font-mono">UX</span>
+                               </button>
+                               <button 
+                                 onClick={() => {
+                                   setSelectedPreset('roadmap');
+                                   setAiPrompt("Marketing campaign timeline Q3");
+                                 }}
+                                 className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center justify-between"
+                               >
+                                 <span className="flex items-center gap-2">
+                                   <Map size={14} className="text-green-600" /> Generate Product Roadmap
+                                 </span>
+                                 <span className="text-[9px] text-gray-400 font-mono">Timeline</span>
+                               </button>
+                            </div>
+                            <form 
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                if (aiPrompt.trim()) {
+                                  handleGenerateAIDiagram('flowchart', aiPrompt);
+                                }
+                              }}
+                              className="mt-2 pt-2 border-t border-gray-100 px-2"
+                            >
+                               <div className="relative">
+                                  <input 
+                                    type="text" 
+                                    value={aiPrompt}
+                                    onChange={(e) => setAiPrompt(e.target.value)}
+                                    placeholder="Or describe any flowchart/diagram..." 
+                                    className="w-full bg-gray-50 border border-gray-200 rounded-md py-1.5 pl-3 pr-8 text-[11px] text-gray-950 focus:outline-none focus:ring-1 focus:ring-[#FFD60A] transition-all" 
+                                  />
+                                  <button 
+                                    type="submit" 
+                                    title="Generate with custom prompt"
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-[#111111] rounded flex items-center justify-center text-white hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <ArrowRight size={10} />
+                                  </button>
+                               </div>
+                            </form>
+                          </>
+                        ) : (
+                          <div className="px-1 py-1 space-y-3">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                                What is the concept/topic?
+                              </label>
+                              <textarea
+                                value={aiPrompt}
+                                onChange={(e) => setAiPrompt(e.target.value)}
+                                rows={3}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs text-gray-950 focus:outline-none focus:ring-2 focus:ring-[#FFD60A]/20 focus:border-[#FFD60A] transition-all resize-none font-medium leading-relaxed"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => setSelectedPreset(null)}
+                                className="flex-1 bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium py-2 rounded-lg text-xs transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button 
+                                onClick={() => handleGenerateAIDiagram(selectedPreset, aiPrompt)}
+                                className="flex-1 bg-black text-white hover:bg-neutral-900 font-medium py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-1 shadow"
+                              >
+                                ✨ Generate
+                              </button>
+                            </div>
+                          </div>
+                        )}
                      </div>
                      
-                     <button className="h-12 px-4 bg-white border border-gray-200 rounded-full shadow-lg flex items-center gap-2 hover:bg-gray-50 transition-all font-semibold text-sm text-[#111111]">
-                        <Sparkles size={18} className="text-[#FFD60A]" /> Ask AI
+                     <button 
+                       onClick={() => setIsAiMenuOpen(!isAiMenuOpen)}
+                       className={`h-12 px-5 bg-white border rounded-full shadow-lg flex items-center gap-2 hover:bg-gray-50 transition-all font-semibold text-sm ${isAiMenuOpen ? 'border-[#FFD60A] ring-2 ring-[#FFD60A]/10 text-[#111111]' : 'border-gray-200 text-[#111111]'}`}
+                     >
+                        <Sparkles size={18} className="text-[#FFD60A] animate-pulse" /> Ask AI
                      </button>
                   </div>
         </div>
@@ -1515,6 +2269,100 @@ export default function CanvasPage() {
         </div>
       </footer>
       <TemplateLibraryModal isOpen={isTemplateModalOpen} onClose={() => setIsTemplateModalOpen(false)} />
+      
+      {showCanvasRenameModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowCanvasRenameModal(false)}>
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              confirmRenameBoardFromHeader();
+            }}
+            className="bg-white border border-gray-150 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-scale-in text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-gray-900 mb-4">
+              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                <Pencil size={18} />
+              </div>
+              <h3 className="font-bold text-lg text-gray-900">Rename Diagram</h3>
+            </div>
+            
+            <div className="mb-6">
+              <label htmlFor="canvas-title-input" className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                New Board Title
+              </label>
+              <input
+                id="canvas-title-input"
+                type="text"
+                value={tempCanvasTitle}
+                onChange={(e) => setTempCanvasTitle(e.target.value)}
+                className="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-3.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-gray-300 shadow-sm transition-all"
+                placeholder="Enter board title..."
+                autoFocus
+                required
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCanvasRenameModal(false)}
+                className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-xl border border-gray-200 transition-all"
+                disabled={isHeaderRenamingActive}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm font-bold text-white bg-[#111111] hover:bg-gray-900 rounded-xl shadow-sm transition-all"
+                disabled={isHeaderRenamingActive}
+              >
+                {isHeaderRenamingActive ? "Saving..." : "Save Title"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showCanvasDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowCanvasDeleteModal(false)}>
+          <div 
+            className="bg-white border border-gray-150 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-scale-in text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-[#FF3B30] mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+                <Trash2 size={20} />
+              </div>
+              <h3 className="font-bold text-lg text-gray-900">Delete Diagram</h3>
+            </div>
+            
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              Are you sure you want to delete this board? This action is permanent and cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCanvasDeleteModal(false)}
+                className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-xl border border-gray-200 transition-all"
+                disabled={isHeaderDeletingActive}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteBoardFromHeader}
+                className="px-4 py-2 text-sm font-bold text-white bg-[#FF3B30] hover:bg-[#E3261C] rounded-xl shadow-sm transition-all flex items-center justify-center animate-none"
+                disabled={isHeaderDeletingActive}
+              >
+                {isHeaderDeletingActive ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isShareModalOpen && boardId && (
         <ShareModal 
           boardId={boardId} 

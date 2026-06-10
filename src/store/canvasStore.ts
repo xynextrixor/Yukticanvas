@@ -19,6 +19,10 @@ export interface Shape {
   flipY?: boolean;
   opacity?: number;
   layer?: number;
+  fromId?: string;
+  fromPosition?: 't' | 'r' | 'b' | 'l' | 'center';
+  toId?: string;
+  toPosition?: 't' | 'r' | 'b' | 'l' | 'center';
 }
 
 export interface Viewport {
