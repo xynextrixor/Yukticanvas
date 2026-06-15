@@ -1,11 +1,12 @@
 import React from "react"
-import { User, Mail, Shield, LogOut, CreditCard, Database } from "lucide-react"
+import { User, Mail, Shield, LogOut, CreditCard, Database, Settings } from "lucide-react"
 import { useAuth } from "../../lib/AuthContext"
 import { Button } from "@/components/ui/button"
 
 export default function SettingsPage() {
   const { user, signOut } = useAuth();
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : "U";
+  const [localDarkMode, setLocalDarkMode] = React.useState(() => localStorage.getItem('canvas-dark-mode') === 'true');
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[800px] mx-auto space-y-8 bg-[#FAFAFA] min-h-full">
@@ -75,6 +76,37 @@ export default function SettingsPage() {
               <p className="text-sm text-indigo-700/80">You have unlimited boards and premium templates.</p>
             </div>
             <Button variant="outline" className="bg-white whitespace-nowrap">Manage Billing</Button>
+          </div>
+        </section>
+
+        {/* App Preferences */}
+        <section className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Settings size={18} className="text-indigo-600" /> App Preferences
+          </h2>
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between py-3 gap-4">
+              <div>
+                <h3 className="font-medium text-gray-900">Dark Mode Canvas</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Enables or disables dark mode (<span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-xs">#525252</span>) for all drawing canvases.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVal = !localDarkMode;
+                  localStorage.setItem('canvas-dark-mode', String(nextVal));
+                  setLocalDarkMode(nextVal);
+                  // Dispatch storage event to alert other sheets/canvases instantly
+                  window.dispatchEvent(new Event('storage'));
+                }}
+                className={`w-11 h-6 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${localDarkMode ? "bg-indigo-600" : "bg-gray-200"}`}
+                title="Toggle Dark Mode"
+              >
+                <div className={`bg-white w-5 h-5 rounded-full shadow-md transform duration-200 ${localDarkMode ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+            </div>
           </div>
         </section>
 

@@ -7,13 +7,13 @@ import {
   MoreHorizontal, Users, Share, Settings, ChevronLeft, Search, ZoomIn, ZoomOut, Sparkles,
   Hand, Hexagon, Octagon, Star, MessageSquare, Frame, Eraser, Link2, Wand2, Paintbrush,
   Undo2, Redo2, Copy, ClipboardPaste, CopyPlus, Group, Ungroup, MoveUp, MoveDown, Lock, Unlock, Download, Share2, AlignCenter, AlignLeft, AlignRight, CornerUpRight, ArrowRightLeft, AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd, AlignHorizontalJustifyCenter, AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
-  Box, Maximize, MousePointerClick, Bot, Network, Map, Library, Trash2, AlertTriangle, X
+  Box, Maximize, MousePointerClick, Bot, Network, Map as MapIcon, Library, Trash2, AlertTriangle, X, Sun, Moon,
+  Layers, Eye, EyeOff, ChevronUp, ChevronDown, Plus
 } from "lucide-react"
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts"
 import { TemplateLibraryModal } from "../../components/TemplateLibraryModal"
 import ShareModal from "../../components/ShareModal"
 import { useAuth } from "../../lib/AuthContext"
-import { createBoardChannel, CollaboratorState, CursorPosition } from "../../lib/realtime"
 import { useCanvasStore, Shape, ShapeType } from "../../store/canvasStore"
 import { YuktiCanvasLogo } from "../../components/YuktiCanvasLogo"
 import { getBoard, updateBoard, deleteBoard, Board } from "../../lib/boards"
@@ -88,6 +88,89 @@ const ShapeRenderer = ({ shape, isSelected, updateShape, activeTool }: { shape: 
   // they must be rendered using absolute canvas coordinates (x1, y1, x2, y2) instead of offsets.
   const renderContent = () => {
     switch (shape.type) {
+      case 'pencil':
+      case 'brush':
+      case 'highlight':
+      case 'laser': {
+        if (!shape.points || shape.points.length === 0) return null;
+        
+        const filterId = shape.type === 'laser' ? `url(#laser-glow)` : undefined;
+        const sWidth = shape.strokeWidth || (shape.type === 'pencil' ? 2 : shape.type === 'brush' ? 6 : shape.type === 'highlight' ? 14 : 3);
+        const strokeOp = shape.opacity !== undefined ? shape.opacity : (shape.type === 'highlight' ? 0.45 : 1);
+        const sColor = shape.type === 'laser' ? '#FF2D55' : (shape.strokeColor || '#000000');
+        const total = shape.points.length;
+
+        // Custom variable stroke calligraphy profile
+        if (shape.useVariableStroke && total >= 2) {
+          const getWidth = (idx: number) => {
+            const base = sWidth;
+            if (total < 4) return base;
+            const percent = idx / (total - 1);
+            const taperZone = 0.25; // 25% taper on ends
+            
+            if (percent < taperZone) {
+              const factor = percent / taperZone;
+              return base * (0.15 + 0.85 * Math.sin(factor * Math.PI / 2));
+            } else if (percent > 1 - taperZone) {
+              const factor = (1 - percent) / taperZone;
+              return base * (0.15 + 0.85 * Math.sin(factor * Math.PI / 2));
+            }
+            return base;
+          };
+
+          return (
+            <g opacity={strokeOp} style={{ filter: filterId }}>
+              {shape.points.map((pt, idx) => {
+                if (idx === 0) return null;
+                const prev = shape.points![idx - 1];
+                const sw = getWidth(idx);
+                return (
+                  <line
+                    key={idx}
+                    x1={prev.x}
+                    y1={prev.y}
+                    x2={pt.x}
+                    y2={pt.y}
+                    stroke={sColor}
+                    strokeWidth={sw}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                );
+              })}
+            </g>
+          );
+        }
+
+        // Default or smoothed quadratic Bezier curve
+        let d = `M ${shape.points[0].x} ${shape.points[0].y}`;
+        if (total < 3) {
+          for (let i = 1; i < total; i++) {
+            d += ` L ${shape.points[i].x} ${shape.points[i].y}`;
+          }
+        } else {
+          let i;
+          for (i = 1; i < total - 2; i++) {
+            const xc = (shape.points[i].x + shape.points[i+1].x) / 2;
+            const yc = (shape.points[i].y + shape.points[i+1].y) / 2;
+            d += ` Q ${shape.points[i].x} ${shape.points[i].y}, ${xc} ${yc}`;
+          }
+          d += ` Q ${shape.points[i].x} ${shape.points[i].y}, ${shape.points[i+1].x} ${shape.points[i+1].y}`;
+        }
+
+        return (
+          <path
+            d={d}
+            fill="none"
+            stroke={sColor}
+            strokeWidth={sWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={strokeOp}
+            style={{ filter: filterId }}
+          />
+        );
+      }
       case 'rect':
         return <rect width={w} height={h} fill={fillColor} stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} strokeLinejoin="round" strokeLinecap="round" />;
       case 'roundRect':
@@ -237,10 +320,8 @@ export default function CanvasPage() {
   const nav = useNavigate()
   const { user } = useAuth()
   
-  const [collaborators, setCollaborators] = useState<CollaboratorState[]>([])
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
-  const channelRef = useRef<any>(null)
-  const isRemoteUpdateRef = useRef(false)
+  const [isMobilePropertiesOpen, setIsMobilePropertiesOpen] = useState(false)
   
   const {
     shapes,
@@ -259,7 +340,14 @@ export default function CanvasPage() {
     setSelection,
     setActiveTool,
     setIsDrawing,
-    setDraftShape
+    setDraftShape,
+    layers,
+    activeLayerId,
+    addLayer,
+    updateLayer,
+    deleteLayer,
+    setActiveLayerId,
+    setLayers
   } = useCanvasStore();
 
   const location = useLocation();
@@ -499,32 +587,8 @@ export default function CanvasPage() {
       }).catch(err => {
         console.error("Failed to load board:", err);
       });
-
-      if (user && user.email) {
-        channelRef.current = createBoardChannel(
-          boardId, 
-          user.id, 
-          user.email,
-          (activeUsers) => setCollaborators(activeUsers.filter(u => u.id !== user.id)),
-          (userId, pos) => {
-            setCollaborators(prev => prev.map(c => c.id === userId ? { ...c, cursor: pos } : c));
-          },
-          (payload) => {
-             // Received remote update
-             isRemoteUpdateRef.current = true;
-             if (payload.actionType === 'full_sync') {
-                setShapes(payload.data.shapes);
-             }
-          }
-        );
-        return () => {
-           if (channelRef.current) {
-             channelRef.current.channel.unsubscribe();
-           }
-        }
-      }
     }
-  }, [boardId, setShapes, setViewport, user]);
+  }, [boardId, setShapes, setViewport]);
 
   // Trigger AI generation if query params are present on fresh empty boards
   useEffect(() => {
@@ -541,20 +605,13 @@ export default function CanvasPage() {
     }
   }, [dbBoard, shapes.length]);
 
-  // Track cursor movement for realtime
+  // Track cursor movement
   const handlePointerMoveCanvas = (e: React.PointerEvent) => {
-    if (!channelRef.current) return;
-    const pos = {
-      x: (e.clientX - viewport.x) / viewport.zoom,
-      y: (e.clientY - viewport.y) / viewport.zoom
-    };
-    channelRef.current.updateCursor(pos);
+    // Used to handle realtime cursor tracking here
   };
 
   useEffect(() => {
-    if (channelRef.current && selectedShapeIds) {
-      channelRef.current.updateSelection(selectedShapeIds);
-    }
+    // Used to handle realtime selection sync
   }, [selectedShapeIds]);
 
   useEffect(() => {
@@ -568,14 +625,41 @@ export default function CanvasPage() {
     }
   }, [boardId, templateId, setShapes]);
 
-  // Auto-save & broadcast
+  // Auto-fading for temporary presentation laser lines
+  useEffect(() => {
+    const laserShapes = shapes.filter(s => s.type === 'laser');
+    if (laserShapes.length === 0) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      const updatedShapes = shapes.map(s => {
+        if (s.type === 'laser') {
+          const age = now - parseInt(s.id);
+          if (age > 2000) {
+            changed = true;
+            return null; // delete after 2 seconds
+          } else if (age > 1000) {
+            changed = true;
+            // Fade opacity linearly between 1.0 and 0.0
+            const opacity = Math.max(0, 1 - (age - 1000) / 1000);
+            return { ...s, opacity };
+          }
+        }
+        return s;
+      }).filter(Boolean) as Shape[];
+
+      if (changed) {
+        setShapes(updatedShapes);
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [shapes, setShapes]);
+
+  // Auto-save
   useEffect(() => {
     if (!isLoadedRef.current || !boardId || boardId === 'new') return;
-    
-    if (isRemoteUpdateRef.current) {
-      isRemoteUpdateRef.current = false;
-      return; // Skip save/broadcast if change was from remote
-    }
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -585,10 +669,6 @@ export default function CanvasPage() {
       updateBoard(boardId, {
         content: { shapes, viewport }
       }).catch(err => console.error("Auto-save failed", err));
-
-      if (channelRef.current) {
-         channelRef.current.broadcastUpdate('full_sync', { shapes });
-      }
     }, 1000);
 
     return () => clearTimeout(saveTimeoutRef.current);
@@ -760,6 +840,24 @@ export default function CanvasPage() {
   const [selectedColor, setSelectedColor] = useState('#FFFFFF');
   const [selectedStrokeColor, setSelectedStrokeColor] = useState('#000000');
   const [selectedStroke, setSelectedStroke] = useState<'solid' | 'dashed' | 'none'>('solid');
+  const [smoothing, setSmoothing] = useState(40);
+  const [useVariableStroke, setUseVariableStroke] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('canvas-dark-mode') === 'true');
+  const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setIsDarkMode(localStorage.getItem('canvas-dark-mode') === 'true');
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('canvas-dark-mode', String(isDarkMode));
+  }, [isDarkMode]);
 
   const getCanvasCoords = (e: React.PointerEvent) => {
     if (!containerRef.current) return { x: 0, y: 0 };
@@ -768,6 +866,37 @@ export default function CanvasPage() {
     const y = (e.clientY - rect.top - viewport.y) / viewport.zoom;
     return { x, y };
   };
+
+  const isPointInShape = (px: number, py: number, s: Shape) => {
+    if (['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector'].includes(s.type)) {
+      const midX = s.x + s.width / 2;
+      const midY = s.y + s.height / 2;
+      const distToMid = Math.hypot(px - midX, py - midY);
+      const distToStart = Math.hypot(px - s.x, py - s.y);
+      const distToEnd = Math.hypot(px - (s.x + s.width), py - (s.y + s.height));
+      return distToMid < 24 || distToStart < 24 || distToEnd < 24;
+    }
+    
+    if (['pencil', 'brush', 'highlight', 'laser'].includes(s.type)) {
+      if (!s.points || s.points.length === 0) {
+        return px >= s.x - 10 && px <= s.x + s.width + 10 && py >= s.y - 10 && py <= s.y + s.height + 10;
+      }
+      return s.points.some(p => {
+        const actualX = s.x + p.x;
+        const actualY = s.y + p.y;
+        return Math.hypot(px - actualX, py - actualY) < 15;
+      });
+    }
+
+    return (
+      px >= s.x && 
+      px <= s.x + s.width && 
+      py >= s.y && 
+      py <= s.y + s.height
+    );
+  };
+
+  const isErasingRef = useRef(false);
 
   const alignShapes = (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom' | 'distribute-horizontal' | 'distribute-vertical') => {
     if (selectedShapeIds.length < 2) return;
@@ -848,6 +977,41 @@ export default function CanvasPage() {
   }, [viewport, zoom, pan]);
 
    const handlePointerDown = (e: React.PointerEvent) => {
+     const isDrawingPathOverride = ['pencil', 'brush', 'highlight', 'laser'].includes(activeTool);
+     const isEraserOverride = activeTool === 'eraser';
+     if (isDrawingPathOverride || isEraserOverride) {
+       const coords = getCanvasCoords(e);
+       if (isEraserOverride) {
+         isErasingRef.current = true;
+         const collided = shapes.filter(s => isPointInShape(coords.x, coords.y, s)).map(s => s.id);
+         if (collided.length > 0) {
+           deleteShapes(collided);
+         }
+         (e.target as HTMLElement).setPointerCapture(e.pointerId);
+         return;
+       }
+       if (isDrawingPathOverride) {
+         setIsDrawing(true);
+         setDraftShape({
+           id: Date.now().toString(),
+           type: activeTool as ShapeType,
+           x: coords.x,
+           y: coords.y,
+           width: 1,
+           height: 1,
+           color: selectedColor,
+           fillColor: 'none',
+           strokeColor: selectedStrokeColor,
+           stroke: 'solid',
+           strokeWidth: activeTool === 'pencil' ? 2 : activeTool === 'brush' ? 6 : activeTool === 'highlight' ? 14 : 3,
+           opacity: activeTool === 'highlight' ? 0.45 : activeTool === 'laser' ? 0.9 : 1.0,
+           points: [{ x: 0, y: 0 }],
+            useVariableStroke: ['pencil', 'brush'].includes(activeTool) ? useVariableStroke : false
+         });
+         (e.target as HTMLElement).setPointerCapture(e.pointerId);
+         return;
+       }
+     }
     if (e.target === containerRef.current || (e.target as Element).tagName === 'svg' || ((e.target as Element).tagName === 'rect' && (e.target as Element).getAttribute('fill') === 'url(#canvas-grid)')) {
       if (activeTool === 'select' || activeTool === 'hand' || e.button === 1 || e.button === 2) {
         // Start pan
@@ -926,6 +1090,23 @@ export default function CanvasPage() {
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (isErasingRef.current) {
+      const coords = getCanvasCoords(e);
+      const collided = shapes.filter(s => isPointInShape(coords.x, coords.y, s)).map(s => s.id);
+      if (collided.length > 0) {
+        deleteShapes(collided);
+      }
+      return;
+    }
+    if (isDrawing && draftShape && ['pencil', 'brush', 'highlight', 'laser'].includes(draftShape.type)) {
+      const coords = getCanvasCoords(e);
+      const nextPoints = [...(draftShape.points || []), { x: coords.x - draftShape.x, y: coords.y - draftShape.y }];
+      setDraftShape({
+        ...draftShape,
+        points: nextPoints
+      });
+      return;
+    }
     handlePointerMoveCanvas(e);
 
     if (dragLineInfo.current) {
@@ -1022,6 +1203,9 @@ export default function CanvasPage() {
        const boxMaxY = box.y + box.height;
 
        const overlappingIds = shapes.filter(s => {
+           const lid = s.layerId || 'default';
+           const isLocked = layers.find(l => l.id === lid)?.locked ?? false;
+           if (isLocked) return false;
           const sMinX = Math.min(s.x, s.x + s.width);
           const sMaxX = Math.max(s.x, s.x + s.width);
           const sMinY = Math.min(s.y, s.y + s.height);
@@ -1146,7 +1330,87 @@ export default function CanvasPage() {
     }
   };
 
+  const smoothPoints = (pts: { x: number; y: number }[], factor: number) => {
+    if (pts.length < 3 || factor <= 0) return pts;
+    
+    const f = (factor / 100) * 0.85; 
+    let current = [...pts];
+    
+    const passes = Math.max(1, Math.min(5, Math.ceil(factor / 20)));
+    for (let pass = 0; pass < passes; pass++) {
+      const next = [current[0]];
+      for (let i = 1; i < current.length - 1; i++) {
+        const prev = current[i - 1];
+        const curr = current[i];
+        const nxt = current[i + 1];
+        
+        const smoothedX = curr.x * (1 - f) + (prev.x + nxt.x) * (f / 2);
+        const smoothedY = curr.y * (1 - f) + (prev.y + nxt.y) * (f / 2);
+        
+        next.push({ x: smoothedX, y: smoothedY });
+      }
+      next.push(current[current.length - 1]);
+      current = next;
+    }
+    return current;
+  };
+
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (isErasingRef.current) {
+      isErasingRef.current = false;
+      if (e.target instanceof HTMLElement) e.target.releasePointerCapture(e.pointerId);
+      return;
+    }
+    if (isDrawing && draftShape && ['pencil', 'brush', 'highlight', 'laser'].includes(draftShape.type)) {
+      let finalShape = { ...draftShape };
+      let pts = finalShape.points || [];
+      if (['pencil', 'brush'].includes(finalShape.type)) {
+        pts = smoothPoints(pts, smoothing);
+      }
+      if (pts.length < 2) {
+        setIsDrawing(false);
+        setDraftShape(null);
+        setActiveTool('select');
+        return;
+      }
+      
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      pts.forEach(p => {
+        const absX = finalShape.x + p.x;
+        const absY = finalShape.y + p.y;
+        if (absX < minX) minX = absX;
+        if (absX > maxX) maxX = absX;
+        if (absY < minY) minY = absY;
+        if (absY > maxY) maxY = absY;
+      });
+
+      const normWidth = Math.max(1, maxX - minX);
+      const normHeight = Math.max(1, maxY - minY);
+      const adjustedPoints = pts.map(p => {
+        const absX = finalShape.x + p.x;
+        const absY = finalShape.y + p.y;
+        return {
+          x: absX - minX,
+          y: absY - minY
+        };
+      });
+
+      finalShape.x = minX;
+      finalShape.y = minY;
+      finalShape.width = normWidth;
+      finalShape.height = normHeight;
+      finalShape.points = adjustedPoints;
+      finalShape.useVariableStroke = ['pencil', 'brush'].includes(finalShape.type) ? useVariableStroke : false;
+
+      addShape(finalShape);
+      setIsDrawing(false);
+      setDraftShape(null);
+      setActiveTool('select');
+      setSelection([finalShape.id]);
+      setActiveSnap(null);
+      if (e.target instanceof HTMLElement) e.target.releasePointerCapture(e.pointerId);
+      return;
+    }
     if (dragLineInfo.current) {
       dragLineInfo.current = null;
       setActiveSnap(null);
@@ -1247,6 +1511,10 @@ export default function CanvasPage() {
   };
 
   const handleShapePointerDown = (e: React.PointerEvent, shape: Shape) => {
+    if (['pencil', 'brush', 'highlight', 'laser', 'eraser'].includes(activeTool)) {
+      // Let pointer events bubble up to the container/svg canvas to draw/erase on top of existing shapes
+      return;
+    }
     e.stopPropagation();
     
     // Multi-select with shift key
@@ -1378,25 +1646,12 @@ export default function CanvasPage() {
         </div>
 
         {/* Right: Collaboration & Export */}
-        <div className="flex items-center gap-1.5 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
           <div className="hidden lg:flex items-center">
              <div className="relative">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" placeholder="Search..." className="bg-gray-50 border border-gray-200 rounded-full py-1.5 pl-8 pr-3 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#FF3B30] w-36 transition-all" />
              </div>
-          </div>
-          
-          <div className="flex items-center -space-x-1.5 mr-1 shrink-0">
-             {collaborators.slice(0, 3).map((collab, i) => (
-                <div key={collab.id} className={`w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] font-bold shadow-sm relative ${i > 0 ? "hidden xs:flex" : "flex"}`} style={{ backgroundColor: collab.color, zIndex: 30 - i }} title={collab.email}>
-                   {collab.email?.substring(0, 1).toUpperCase() || 'U'}
-                </div>
-             ))}
-             {collaborators.length > 3 && (
-                <div className="w-7 h-7 rounded-full border-2 border-white bg-gray-100 text-gray-600 flex items-center justify-center text-[10px] font-bold shadow-sm relative z-0 hidden xs:flex">
-                   +{collaborators.length - 3}
-                </div>
-             )}
           </div>
           
           <button onClick={() => {
@@ -1474,7 +1729,11 @@ export default function CanvasPage() {
         </div>
 
         {/* Canvas Area */}
-        <div className="flex-1 w-full h-full relative outline-none bg-white" tabIndex={0}>
+        <div 
+          className="flex-1 w-full h-full relative outline-none transition-colors duration-200" 
+          style={{ backgroundColor: isDarkMode ? '#525252' : '#ffffff' }}
+          tabIndex={0}
+        >
             {fallbackNotice && (
               <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 max-w-sm sm:max-w-md w-[calc(100%-2rem)] bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl px-4 py-3.5 shadow-xl flex items-start gap-2.5 backdrop-blur-sm">
                 <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
@@ -1614,6 +1873,13 @@ export default function CanvasPage() {
                 style={{ shapeRendering: 'geometricPrecision' }}
               >
                 <defs>
+                  <filter id="laser-glow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="3" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
                   <pattern
                     id="canvas-grid"
                     width={32 * viewport.zoom}
@@ -1621,7 +1887,7 @@ export default function CanvasPage() {
                     patternUnits="userSpaceOnUse"
                     patternTransform={`translate(${viewport.x % (32 * viewport.zoom)}, ${viewport.y % (32 * viewport.zoom)})`}
                   >
-                    <circle cx={viewport.zoom} cy={viewport.zoom} r={1.5 * viewport.zoom} fill="#e5e7eb" />
+                    <circle cx={viewport.zoom} cy={viewport.zoom} r={1.5 * viewport.zoom} fill={isDarkMode ? "rgba(255, 255, 255, 0.2)" : "#e5e7eb"} />
                   </pattern>
                   {[...shapes, ...(draftShape ? [draftShape] : [])].map(shape => (shape.type === 'arrow' || shape.type === 'doubleArrow' || shape.type === 'curvedArrow' || shape.type === 'connector') ? (
                     <g key={`defs-${shape.id}`}>
@@ -1639,18 +1905,51 @@ export default function CanvasPage() {
 
                 <g transform={`translate(${viewport.x}, ${viewport.y}) scale(${viewport.zoom})`}>
  
-                  {[...shapes, ...(draftShape ? [draftShape] : [])].map((shape) => {
+                  {(() => {
+                    const layerIndexMap = new Map<string, number>();
+                    layers.forEach((l, idx) => {
+                      layerIndexMap.set(l.id, idx);
+                    });
+
+                    const getShapeLayerIndex = (s: Shape) => {
+                      const lid = s.layerId || 'default';
+                      return layerIndexMap.has(lid) ? (layerIndexMap.get(lid) ?? 0) : 0;
+                    };
+
+                    const sortedAndFilteredShapes = shapes
+                      .filter(s => {
+                        const lid = s.layerId || 'default';
+                        const layer = layers.find(l => l.id === lid);
+                        return layer ? layer.visible : true;
+                      })
+                      .sort((a, b) => getShapeLayerIndex(a) - getShapeLayerIndex(b));
+
+                    return [...sortedAndFilteredShapes, ...(draftShape ? [draftShape] : [])];
+                  })().map((shape) => {
                     const isLineLike = ['line', 'arrow', 'doubleArrow', 'curvedArrow', 'connector'].includes(shape.type);
                     const transformStr = isLineLike ? 'translate(0, 0)' : `translate(${shape.x}, ${shape.y})`;
                     const { x1, y1, x2, y2 } = getLineCoords(shape, shapes);
                     const isSel = selectedShapeIds.includes(shape.id);
 
+                    const isShapeLocked = (() => {
+                      const lid = shape.layerId || 'default';
+                      return layers.find(l => l.id === lid)?.locked ?? false;
+                    })();
+
                     return (
                       <g
                         key={shape.id}
                         transform={transformStr}
-                        className={`pointer-events-auto origin-center ${activeTool === 'select' || activeTool === 'hand' ? (isLineLike ? 'cursor-default' : 'cursor-move') : 'cursor-crosshair'}`}
-                        onPointerDown={(e) => handleShapePointerDown(e, shape)}
+                        className={`origin-center ${
+                          isShapeLocked 
+                            ? 'pointer-events-none opacity-60' 
+                            : 'pointer-events-auto'
+                        } ${activeTool === 'select' || activeTool === 'hand' ? (isLineLike ? 'cursor-default' : 'cursor-move') : 'cursor-crosshair'}`}
+                        onPointerDown={(e) => {
+                          if (isShapeLocked) return;
+                          handleShapePointerDown(e, shape);
+                        }}
+                        style={{ pointerEvents: isShapeLocked ? 'none' : 'auto' }}
                       >
                         <ShapeRenderer 
                           shape={shape} 
@@ -1744,15 +2043,6 @@ export default function CanvasPage() {
                     </g>
                   )}
 
-                  {/* Remote Cursors */}
-                  {collaborators.map(collab => collab.cursor && (
-                      <g key={'cursor-'+collab.id} transform={`translate(${collab.cursor.x}, ${collab.cursor.y})`} style={{ pointerEvents: 'none', transition: 'transform 0.1s linear' }}>
-                        <path d="M0,0 L8.5,23 L12.5,14.5 L21,11 Z" fill={collab.color} stroke="#FFFFFF" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                        <rect x={12} y={12} fill={collab.color} rx={4} width={Math.max(60, (collab.email?.split('@')[0] || 'User').length * 8 + 10)} height={20} />
-                        <text x={17} y={26} fill="#FFFFFF" fontSize={12} fontWeight="bold">{collab.email?.split('@')[0] || 'User'}</text>
-                      </g>
-                  ))}
-
                   {selectionBox && (
                     <rect
                       x={selectionBox.x}
@@ -1816,7 +2106,238 @@ export default function CanvasPage() {
                    <Maximize size={16} />
                  </button>
                </div>
+               
+               <div className="bg-white border border-gray-200 rounded-lg flex items-center shadow-lg animate-fade-in">
+                 <button 
+                   className={`p-2 hover:bg-gray-50 cursor-pointer rounded-lg transition-colors flex items-center justify-center ${isDarkMode ? 'text-indigo-600' : 'text-gray-600'}`} 
+                   title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode (#525252)"} 
+                   onClick={() => setIsDarkMode(!isDarkMode)}
+                 >
+                   {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+                 </button>
+               </div>
+
+               <div className="bg-white border border-gray-200 rounded-lg flex items-center shadow-lg animate-fade-in">
+                 <button 
+                   className={`p-2 hover:bg-gray-50 cursor-pointer rounded-lg transition-colors flex items-center justify-center ${isLayersPanelOpen ? 'text-indigo-600 bg-indigo-50/50' : 'text-gray-600'}`} 
+                   title="Layers Management" 
+                   onClick={() => setIsLayersPanelOpen(!isLayersPanelOpen)}
+                 >
+                   <Layers size={16} />
+                 </button>
+               </div>
             </div>
+
+            {/* Dynamic Layer Management Panel */}
+            {isLayersPanelOpen && (
+              <div className="absolute left-4 bottom-16 md:left-24 md:bottom-20 w-76 bg-white border border-gray-200 shadow-2xl rounded-xl p-3.5 z-40 flex flex-col animate-fade-in text-[#111111]">
+                {/* Panel Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-indigo-600">
+                    <Layers size={14} />
+                    <span>Canvas Layers</span>
+                    <span className="bg-indigo-50 text-indigo-700 text-[9px] px-1.5 py-0.5 rounded-full font-mono font-bold">
+                      {layers.length}
+                    </span>
+                  </div>
+                  <button 
+                    onClick={() => setIsLayersPanelOpen(false)}
+                    className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                    title="Close layers panel"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                {/* Layers List */}
+                <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1 no-scrollbar flex-1">
+                  {layers
+                    .map((layer, index) => {
+                      const isActive = layer.id === activeLayerId;
+                      const shapesOnThisLayer = shapes.filter(s => (s.layerId || 'default') === layer.id);
+                      const hasSelectedShapesOnThisLayer = selectedShapeIds.some(id => {
+                        const sh = shapes.find(s => s.id === id);
+                        return sh && (sh.layerId || 'default') === layer.id;
+                      });
+
+                      return (
+                        <div 
+                          key={layer.id}
+                          className={`group flex items-center justify-between p-2 rounded-lg border text-xs transition-all ${
+                            isActive 
+                              ? 'border-indigo-200 bg-indigo-50/40 shadow-sm' 
+                              : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'
+                          }`}
+                        >
+                          {/* Left Segment: Active Indicator + Name Input */}
+                          <div 
+                             className="flex items-center gap-2 flex-grow min-w-0 cursor-pointer"
+                             onClick={() => setActiveLayerId(layer.id)}
+                          >
+                            {/* Active bullet */}
+                            <div 
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                isActive ? 'bg-indigo-600 ring-4 ring-indigo-100/50' : 'bg-gray-300'
+                              }`} 
+                              title={isActive ? 'Active drawing layer' : 'Click to draw on this layer'}
+                            />
+
+                            {/* Inline layer title editor */}
+                            <input
+                              type="text"
+                              value={layer.name}
+                              onChange={(e) => {
+                                updateLayer(layer.id, { name: e.target.value });
+                              }}
+                              onClick={(e) => e.stopPropagation()} // don't trigger layer activation on typing
+                              className="font-medium bg-transparent border-none text-gray-800 focus:text-indigo-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-100 rounded px-1 truncate flex-grow min-w-0 text-xs py-0"
+                            />
+
+                            {/* Shape count badge */}
+                            <span 
+                              className={`text-[9px] font-mono px-1 rounded-sm shrink-0 whitespace-nowrap ${
+                                hasSelectedShapesOnThisLayer
+                                  ? 'bg-indigo-100 text-indigo-800 font-bold'
+                                  : 'bg-gray-100 text-gray-500'
+                              }`}
+                              title={`${shapesOnThisLayer.length} items on this layer ${
+                                hasSelectedShapesOnThisLayer ? '(contains selected items)' : ''
+                              }`}
+                            >
+                              {shapesOnThisLayer.length}
+                            </span>
+                          </div>
+
+                          {/* Right Segment: Visibility, Lock, Reorder, Delete Actions */}
+                          <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                            {/* Visibility Toggle */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateLayer(layer.id, { visible: !layer.visible });
+                              }}
+                              className={`p-1 rounded hover:bg-gray-200/60 transition-colors ${
+                                layer.visible ? 'text-gray-500 hover:text-gray-750' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'
+                              }`}
+                              title={layer.visible ? 'Hide layer' : 'Show layer'}
+                            >
+                              {layer.visible ? <Eye size={12} /> : <EyeOff size={12} />}
+                            </button>
+
+                            {/* Lock Toggle */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateLayer(layer.id, { locked: !layer.locked });
+                              }}
+                              className={`p-1 rounded hover:bg-gray-200/60 transition-colors ${
+                                layer.locked ? 'text-indigo-650 bg-indigo-50 hover:bg-indigo-100/50' : 'text-gray-400 hover:text-gray-700'
+                              }`}
+                              title={layer.locked ? 'Unlock layer' : 'Lock layer'}
+                            >
+                              {layer.locked ? <Lock size={12} /> : <Unlock size={12} />}
+                            </button>
+
+                            {/* Reordering Controls: Move UP / DOWN */}
+                            <button
+                              type="button"
+                              disabled={index === 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (index > 0) {
+                                  const prev = [...layers];
+                                  const temp = prev[index];
+                                  prev[index] = prev[index - 1];
+                                  prev[index - 1] = temp;
+                                  setLayers(prev);
+                                }
+                              }}
+                              className="p-1 rounded text-gray-400 hover:text-gray-600 transition-colors hover:bg-gray-200/60 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                              title="Move Layer Down (Draw Underneath)"
+                            >
+                              <ChevronDown size={12} />
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={index === layers.length - 1}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (index < layers.length - 1) {
+                                  const prev = [...layers];
+                                  const temp = prev[index];
+                                  prev[index] = prev[index + 1];
+                                  prev[index + 1] = temp;
+                                  setLayers(prev);
+                                }
+                              }}
+                              className="p-1 rounded text-gray-400 hover:text-gray-600 transition-colors hover:bg-gray-200/60 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                              title="Move Layer To Top (Draw On Top)"
+                            >
+                              <ChevronUp size={12} />
+                            </button>
+
+                            {/* Delete Layer Button */}
+                            <button
+                              type="button"
+                              disabled={layers.length <= 1}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteLayer(layer.id);
+                              }}
+                              className="p-1 rounded text-gray-400 hover:text-[#FF3B30] hover:bg-red-50/50 transition-colors disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                              title="Delete layer (shapes will migrate to fallback)"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Creation & Actions Panel */}
+                <div className="pt-2 border-t border-gray-100 mt-2 flex flex-col gap-2">
+                  {/* Quick Move Selected Shapes to Selected Layer option */}
+                  {selectedShapeIds.length > 0 && (
+                    <div className="bg-indigo-50/30 hover:bg-indigo-50/50 border border-indigo-100/50 rounded-lg p-2 flex flex-col gap-1 transition-colors">
+                      <span className="text-[10px] text-indigo-700 font-medium">
+                        Move {selectedShapeIds.length} selected object{selectedShapeIds.length > 1 ? 's' : ''} to:
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {layers.map(l => (
+                          <button
+                            key={`move-to-${l.id}`}
+                            onClick={() => {
+                              selectedShapeIds.forEach(id => {
+                                updateShape(id, { layerId: l.id });
+                              });
+                            }}
+                            className="bg-white hover:bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 text-[9px] font-medium text-indigo-700 transition-colors"
+                            title={`Move selected objects to ${l.name}`}
+                          >
+                            {l.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Add New Layer Button */}
+                  <button
+                    onClick={() => {
+                      const lNum = layers.length + 1;
+                      addLayer(`Layer ${lNum}`);
+                    }}
+                    className="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  >
+                    <Plus size={14} /> Add New Layer
+                  </button>
+                </div>
+              </div>
+            )}
 
                   {/* Floating AI Assistant */}
                   <div className="absolute bottom-4 right-4 md:right-6 md:bottom-6 z-40">
@@ -1916,7 +2437,7 @@ export default function CanvasPage() {
                                  className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#111111] rounded-md transition-colors flex items-center justify-between"
                                >
                                  <span className="flex items-center gap-2">
-                                   <Map size={14} className="text-green-600" /> Generate Product Roadmap
+                                    <MapIcon size={14} className="text-green-600" /> Generate Product Roadmap
                                  </span>
                                  <span className="text-[9px] text-gray-400 font-mono">Timeline</span>
                                </button>
@@ -1985,17 +2506,95 @@ export default function CanvasPage() {
                      >
                         <Sparkles size={18} className="text-[#FFD60A] animate-pulse" /> Ask AI
                      </button>
+
+                     {selectedShapeId && (
+                       <button
+                         onClick={() => setIsMobilePropertiesOpen(!isMobilePropertiesOpen)}
+                         className="md:hidden h-12 w-12 bg-[#FF3B30] text-white hover:bg-[#E3261C] border border-white/20 rounded-full shadow-xl flex items-center justify-center transition-all duration-200 active:scale-95 shrink-0"
+                         title="Design options"
+                       >
+                         <Paintbrush size={18} className="text-white" />
+                       </button>
+                     )}
                   </div>
         </div>
 
+        {/* Mobile Backdrop Overlay for Design properties */}
+        {isMobilePropertiesOpen && (
+          <div 
+            className="fixed inset-0 bg-black/30 z-30 md:hidden transition-opacity"
+            onClick={() => setIsMobilePropertiesOpen(false)}
+          />
+        )}
+
         {/* Right Panel (Properties) */}
-        <div className="w-[280px] bg-white border-l border-gray-200 hidden md:flex flex-col z-30 shrink-0">
-           <div className="h-12 border-b border-gray-100 flex items-center px-4">
+        <div className={`
+          bg-white border-l border-gray-200 flex flex-col z-35 shrink-0
+          fixed md:relative top-14 bottom-0 right-0 w-[280px] md:h-auto h-[calc(100vh-56px)] transition-transform duration-300 ease-in-out
+          ${isMobilePropertiesOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full md:translate-x-0'}
+          ${(selectedShapeId || ['pencil', 'brush', 'highlight', 'laser'].includes(activeTool as string)) ? 'opacity-100 pointer-events-auto' : 'opacity-60 md:opacity-100 pointer-events-none md:pointer-events-auto'}
+        `}>
+           <div className="h-12 border-b border-gray-100 flex items-center justify-between px-4 shrink-0">
              <h3 className="font-semibold text-xs text-[#111111]">Design</h3>
+             <button 
+               onClick={() => setIsMobilePropertiesOpen(false)}
+               className="md:hidden p-1 hover:bg-gray-100 rounded text-gray-500 cursor-pointer"
+               title="Close sidebar"
+             >
+               <X size={15} />
+             </button>
            </div>
            <div className="p-4 flex-1 overflow-y-auto space-y-6 no-scrollbar">
               
-              {/* Style Presets */}
+              {/* Pen & Brush Studio (Handwriting Smoothing & Variable Stroke Profiles) */}
+               {['pencil', 'brush', 'highlight', 'laser'].includes(activeTool) && (
+                 <div className="pb-4 border-b border-gray-100 space-y-4">
+                   <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                     </svg>
+                     <span>Academic Pen & Brush Studio</span>
+                   </div>
+
+                   {/* Handwriting Smoothing */}
+                   <div className="space-y-1.5">
+                     <div className="flex items-center justify-between text-xs">
+                       <span className="text-gray-600 font-medium flex items-center gap-1" title="Instantly cleans up messy, jagged lines into elegant, smooth curves.">
+                         Smoothing
+                       </span>
+                       <span className="text-[10px] font-semibold font-mono text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">{smoothing}%</span>
+                     </div>
+                     <input
+                       type="range"
+                       min="0"
+                       max="100"
+                       value={smoothing}
+                       onChange={(e) => setSmoothing(parseInt(e.target.value))}
+                       className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
+                     />
+                     <p className="text-[10px] text-gray-400">Bezier interpolation & low-pass filtering</p>
+                   </div>
+
+                   {/* Variable Stroke (Calligraphy Simulation) */}
+                   {['pencil', 'brush'].includes(activeTool) && (
+                     <div className="flex items-center justify-between pt-2">
+                       <div className="space-y-0.5">
+                         <span className="text-xs text-gray-600 font-medium">Variable Stroke Profile</span>
+                         <p className="text-[10px] text-gray-400">Calibrated calligraphic pen tapers</p>
+                       </div>
+                       <button
+                         onClick={() => setUseVariableStroke(!useVariableStroke)}
+                         className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${useVariableStroke ? "bg-indigo-600" : "bg-gray-200"}`}
+                         title="Thins out stroke widths at ends to simulate classic fountain & calligraphy pens."
+                       >
+                         <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${useVariableStroke ? "translate-x-4" : "translate-x-0"}`} />
+                       </button>
+                     </div>
+                   )}
+                 </div>
+               )}
+
+               {/* Style Presets */}
               <div className="pb-4 border-b border-gray-100">
                 <div className="flex items-center justify-between mb-2">
                    <h4 className="text-xs font-semibold text-gray-500">Style Options</h4>
@@ -2102,34 +2701,55 @@ export default function CanvasPage() {
               {/* Stroke */}
               <div className="pt-4 border-t border-gray-100">
                 <div className="flex items-center justify-between mb-2">
-                   <h4 className="text-xs font-semibold text-gray-500">Stroke</h4>
+                   <h4 className="text-xs font-semibold text-gray-500">Outline & Stroke Color</h4>
                 </div>
                 
                 <div className="flex items-center gap-2 mb-3">
                    <div 
-                      className="w-8 h-8 rounded border border-gray-200 relative overflow-hidden" 
+                      className="w-8 h-8 rounded border border-gray-200 relative overflow-hidden shadow-sm hover:border-indigo-400 transition-colors" 
                       style={{ backgroundColor: selectedStrokeColor === 'transparent' ? '#fff' : selectedStrokeColor, backgroundImage: selectedStrokeColor === 'transparent' ? 'repeating-conic-gradient(#ccc 0% 25%, white 0% 50%)' : 'none', backgroundSize: '8px 8px' }}
+                      title="Custom Color Picker"
                    >
                      <input type="color" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" value={selectedStrokeColor === 'transparent' ? '#ffffff' : selectedStrokeColor} onChange={(e) => {
                          setSelectedStrokeColor(e.target.value);
                          selectedShapeIds.forEach(id => updateShape(id, { strokeColor: e.target.value }));
                      }}/>
                    </div>
-                   <input type="text" value={selectedStrokeColor} readOnly className="flex-1 text-xs font-medium uppercase bg-gray-50 border border-gray-200 rounded px-2 py-1.5 focus:outline-none" />
+                   <input 
+                     type="text" 
+                     value={selectedStrokeColor === 'transparent' ? 'TRANSPARENT' : selectedStrokeColor} 
+                     readOnly 
+                     className="flex-1 text-xs font-mono font-medium uppercase bg-gray-50 border border-gray-200 rounded px-2 py-1.5 focus:outline-none" 
+                   />
                 </div>
                 
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {['#FF3B30', '#34C759', '#007AFF', '#FFFFFF', '#000000', 'transparent'].map(c => (
-                    <button 
-                       key={`stroke-${c}`}
-                       onClick={() => {
-                          setSelectedStrokeColor(c);
-                          selectedShapeIds.forEach(id => updateShape(id, { strokeColor: c }));
-                       }}
-                       className={`w-5 h-5 rounded-full border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FF3B30] focus:ring-offset-1 ${selectedStrokeColor === c ? 'ring-2 ring-[#FF3B30] ring-offset-1' : ''}`} 
-                       style={{ backgroundColor: c, backgroundImage: c === 'transparent' ? 'repeating-conic-gradient(#ccc 0% 25%, white 0% 50%)' : 'none', backgroundSize: '8px 8px' }} 
-                    />
-                  ))}
+                <div className="space-y-2 mb-4">
+                  <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider block">Academic Presets</span>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[
+                      { hex: '#4F46E5', name: 'Oxford Indigo' },
+                      { hex: '#10B981', name: 'Cambridge Emerald' },
+                      { hex: '#007AFF', name: 'Academic Blue' },
+                      { hex: '#EF4444', name: 'Harvard Crimson' },
+                      { hex: '#F59E0B', name: 'Amber Gold' },
+                      { hex: '#8B5CF6', name: 'Royal Violet' },
+                      { hex: '#111111', name: 'Charcoal Black' },
+                      { hex: '#6B7280', name: 'Slate Gray' },
+                      { hex: '#FFFFFF', name: 'Chalk White' },
+                      { hex: 'transparent', name: 'Transparent' }
+                    ].map(({ hex: c, name }) => (
+                      <button 
+                         key={`stroke-${c}`}
+                         onClick={() => {
+                            setSelectedStrokeColor(c);
+                            selectedShapeIds.forEach(id => updateShape(id, { strokeColor: c }));
+                         }}
+                         className={`w-7 h-7 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:ring-offset-1 transition-all ${selectedStrokeColor === c ? 'rotate-12 scale-110 shadow-sm ring-2 ring-[#4f46e5] ring-offset-1 z-10' : 'hover:scale-105 active:scale-95'}`} 
+                         style={{ backgroundColor: c, backgroundImage: c === 'transparent' ? 'repeating-conic-gradient(#ccc 0% 25%, white 0% 50%)' : 'none', backgroundSize: '8px 8px' }} 
+                         title={name}
+                      />
+                    ))}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-1 mb-3 bg-gray-50 p-1 rounded-lg border border-gray-200">

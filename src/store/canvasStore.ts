@@ -23,6 +23,16 @@ export interface Shape {
   fromPosition?: 't' | 'r' | 'b' | 'l' | 'center';
   toId?: string;
   toPosition?: 't' | 'r' | 'b' | 'l' | 'center';
+  points?: { x: number; y: number }[];
+  useVariableStroke?: boolean;
+  layerId?: string;
+}
+
+export interface Layer {
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
 }
 
 export interface Viewport {
@@ -54,14 +64,23 @@ interface CanvasState {
   setActiveTool: (tool: ShapeType | 'select' | 'hand') => void;
   setIsDrawing: (isDrawing: boolean) => void;
   setDraftShape: (shape: Shape | null) => void;
+
+  // Layers states & actions
+  layers: Layer[];
+  activeLayerId: string;
+  addLayer: (name: string) => void;
+  updateLayer: (id: string, updates: Partial<Layer>) => void;
+  deleteLayer: (id: string) => void;
+  setActiveLayerId: (id: string) => void;
+  setLayers: (layers: Layer[]) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   shapes: [
-    { id: '1', type: 'rect', x: 400, y: 300, width: 200, height: 120, text: 'Brainstorming Session', color: '#f8f9fa', stroke: 'solid' },
-    { id: '2', type: 'circle', x: 200, y: 300, width: 120, height: 120, color: '#FFD60A', stroke: 'solid' },
-    { id: '3', type: 'sticky', x: 650, y: 250, width: 160, height: 160, text: 'Discuss Q3 goals here', color: '#ffec99' },
-    { id: '4', type: 'arrow', x: 340, y: 360, width: 40, height: 1, color: '#111111' },
+    { id: '1', type: 'rect', x: 400, y: 300, width: 200, height: 120, text: 'Brainstorming Session', color: '#f8f9fa', stroke: 'solid', layerId: 'default' },
+    { id: '2', type: 'circle', x: 200, y: 300, width: 120, height: 120, color: '#FFD60A', stroke: 'solid', layerId: 'default' },
+    { id: '3', type: 'sticky', x: 650, y: 250, width: 160, height: 160, text: 'Discuss Q3 goals here', color: '#ffec99', layerId: 'default' },
+    { id: '4', type: 'arrow', x: 340, y: 360, width: 40, height: 1, color: '#111111', layerId: 'default' },
   ],
   viewport: { x: 0, y: 0, zoom: 1 },
   selectedShapeIds: [],
@@ -74,7 +93,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   })),
 
   addShape: (shape) => set((state) => ({
-    shapes: [...state.shapes, shape]
+    shapes: [...state.shapes, { ...shape, layerId: shape.layerId || state.activeLayerId }]
   })),
 
   updateShape: (id, updates) => set((state) => ({
@@ -155,5 +174,48 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setSelection: (ids) => set({ selectedShapeIds: ids }),
   setActiveTool: (tool) => set({ activeTool: tool }),
   setIsDrawing: (isDrawing) => set({ isDrawing }),
-  setDraftShape: (shape) => set({ draftShape: shape })
+  setDraftShape: (shape) => set({ draftShape: shape }),
+
+  // Layers Defaults
+  layers: [
+    { id: 'default', name: 'Background Layer', visible: true, locked: false }
+  ],
+  activeLayerId: 'default',
+
+  addLayer: (name) => set((state) => {
+    const newLayer: Layer = {
+      id: Date.now().toString(),
+      name,
+      visible: true,
+      locked: false
+    };
+    return {
+      layers: [...state.layers, newLayer],
+      activeLayerId: newLayer.id
+    };
+  }),
+
+  updateLayer: (id, updates) => set((state) => ({
+    layers: state.layers.map(l => l.id === id ? { ...l, ...updates } : l)
+  })),
+
+  deleteLayer: (id) => set((state) => {
+    if (state.layers.length <= 1) return state; // Prevent deleting the last layer
+    const filteredLayers = state.layers.filter(l => l.id !== id);
+    const fallbackId = filteredLayers[0]?.id || 'default';
+    const newActiveId = state.activeLayerId === id ? fallbackId : state.activeLayerId;
+
+    const updatedShapes = state.shapes.map(s => 
+      s.layerId === id ? { ...s, layerId: fallbackId } : s
+    );
+
+    return {
+      layers: filteredLayers,
+      activeLayerId: newActiveId,
+      shapes: updatedShapes
+    };
+  }),
+
+  setActiveLayerId: (id) => set({ activeLayerId: id }),
+  setLayers: (layers) => set({ layers })
 }));

@@ -1,0 +1,5 @@
+/* AUTHOR */
+Team: Yukti Canvas Team
+Site: Yukti Canvas
+Description: AI-powered design platform.
+Built by: The Yukti Canvas Team.
